@@ -165,17 +165,14 @@ impl Scanner {
             }
             '/' => {
                 if self.match_next('=') {
-                    self.add_token(TokenType::SlashEqual)
-                } else {
-                    if self.match_next('/') {
-                        while !self.is_at_end() && self.peek() != '\n' {
-                            self.advance();
-                        }
-                        self.line += 1;
-                        return;
+                    self.add_token(TokenType::SlashEqual);
+                } else if self.match_next('/') {
+                    while !self.is_at_end() && self.peek() != '\n' {
+                        self.advance();
                     }
+                } else {
+                    self.add_token(TokenType::Slash);
                 }
-                self.add_token(TokenType::Slash)
             }
             '=' => {
                 if self.match_next('=') {
@@ -237,13 +234,13 @@ impl Scanner {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> &Vec<Token> {
+    pub fn scan_tokens(&mut self) -> Vec<Token> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token();
         }
         self.start = self.current;
         self.add_token(TokenType::EOF);
-        return &self.tokens;
+        return std::mem::take(&mut self.tokens);
     }
 }

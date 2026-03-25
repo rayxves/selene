@@ -55,6 +55,35 @@ pub enum TokenType {
     EOF,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum TokenLiteral {
+    StringLiteral(String),
+    Number(f64),
+    Boolean(bool),
+    Null,
+}
+
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum UnaryOp {
+    Minus,
+    Bang,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum BinaryOp {
+    Star,
+    Plus,
+    Minus,
+    Slash,
+    EqualEqual,
+    Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
+    BangEqual,
+}
+
 pub static KEYWORDS: LazyLock<HashMap<&str, TokenType>> = LazyLock::new(|| {
     HashMap::from([
         ("var", TokenType::Var),
