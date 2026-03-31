@@ -1,0 +1,59 @@
+use crate::{
+    expr::{ExprVisitor, Expression},
+    token::{BinaryOp, TokenLiteral, UnaryOp},
+};
+
+pub struct AstPrinter;
+
+impl ExprVisitor for AstPrinter {
+    type Output = String;
+
+    fn visit_binary(
+        &mut self,
+        left: &Expression,
+        operator: &crate::token::BinaryOp,
+        right: &Expression,
+    ) -> Self::Output {
+        let op = match operator {
+            BinaryOp::BangEqual => "!=".to_string(),
+            BinaryOp::EqualEqual => "==".to_string(),
+            BinaryOp::Greater => ">".to_string(),
+            BinaryOp::GreaterEqual => ">=".to_string(),
+            BinaryOp::Less => "<".to_string(),
+            BinaryOp::LessEqual => "<=".to_string(),
+            BinaryOp::Minus => "-".to_string(),
+            BinaryOp::Plus => "+".to_string(),
+            BinaryOp::Slash => "/".to_string(),
+            BinaryOp::Star => "*".to_string(),
+        };
+        let left_str = left.accept(self);
+        let right_str = right.accept(self);
+        format!("(left {}, op {}, right {})", left_str, op, right_str)
+    }
+
+    fn visit_literal(&mut self, literal: &crate::token::TokenLiteral) -> Self::Output {
+        return match literal {
+            TokenLiteral::Number(n) => n.to_string(),
+            TokenLiteral::Boolean(b) => b.to_string(),
+            TokenLiteral::StringLiteral(s) => s.to_string(),
+            TokenLiteral::Null => "null".to_string(),
+        };
+    }
+
+    fn visit_unary(
+        &mut self,
+        unary_op: &crate::token::UnaryOp,
+        expr: &Expression,
+    ) -> Self::Output {
+        let op = match unary_op {
+            UnaryOp::Bang => "!".to_string(),
+            UnaryOp::Minus => "-".to_string(),
+        };
+
+        format!("op {} expr {}", op, expr.accept(self))
+    }
+
+    fn visit_grouping(&mut self, expr: &Expression) -> Self::Output {
+        format!("(group {})", expr.accept(self))
+    }
+}

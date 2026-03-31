@@ -3,9 +3,21 @@ use crate::{
     token::{BinaryOp, Token, TokenLiteral, TokenType, UnaryOp},
 };
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct ParseError {
+    pub token: Token,
+    pub message: String,
+}
+
+impl ParseError {
+    pub fn new(token: Token, message: String) -> ParseError {
+        ParseError { token, message }
+    }
+}
 pub struct Parser {
     tokens: Vec<Token>,
     current_pos: usize,
+    pub errors: Vec<ParseError>,
 }
 
 impl Parser {
@@ -13,6 +25,7 @@ impl Parser {
         Parser {
             tokens,
             current_pos: 0,
+            errors: Vec::new(),
         }
     }
 
@@ -41,7 +54,7 @@ impl Parser {
         }
     }
 
-    pub fn primary(&mut self) -> Result<Expression, String> {
+    pub fn primary(&mut self) -> Result<Expression, ParseError> {
         match &self.peek().token_type {
             TokenType::Number(n) => {
                 let n = *n;
@@ -70,18 +83,32 @@ impl Parser {
                         self.advance();
                         Ok(Expression::Grouping(Box::new(expr)))
                     }
-                    _ => Err("Esperava ')' após expressão.".to_string()),
+                    _ => {
+                        let error = ParseError::new(
+                            self.peek().clone(),
+                            "Esperava ')' após expressão.".to_string(),
+                        );
+                        self.errors.push(error.clone());
+                        Err(error)
+                    }
                 }
             }
-            _ => Err(format!(
-                "Token inesperado '{}' na linha {}.",
-                self.peek().lexeme,
-                self.peek().line
-            )),
+            _ => {
+                let error = ParseError::new(
+                    self.peek().clone(),
+                    format!(
+                        "Token inesperado '{}' na linha {}.",
+                        self.peek().lexeme,
+                        self.peek().line
+                    ),
+                );
+                self.errors.push(error.clone());
+                Err(error)
+            }
         }
     }
 
-    pub fn unary(&mut self) -> Result<Expression, String> {
+    pub fn unary(&mut self) -> Result<Expression, ParseError> {
         match &self.peek().token_type {
             TokenType::Bang => {
                 self.advance();
@@ -97,7 +124,7 @@ impl Parser {
         }
     }
 
-    pub fn factor(&mut self) -> Result<Expression, String> {
+    pub fn factor(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.unary()?;
         while self.check(&TokenType::Slash) || self.check(&TokenType::Star) {
             let operator = match self.peek().token_type {
@@ -112,7 +139,7 @@ impl Parser {
         Ok(left)
     }
 
-    pub fn term(&mut self) -> Result<Expression, String> {
+    pub fn term(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.factor()?;
         while self.check(&TokenType::Plus) || self.check(&TokenType::Minus) {
             let operator = match self.peek().token_type {
@@ -127,7 +154,7 @@ impl Parser {
         Ok(left)
     }
 
-    pub fn comparison(&mut self) -> Result<Expression, String> {
+    pub fn comparison(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.term()?;
         while self.check(&TokenType::Greater)
             || self.check(&TokenType::Less)
@@ -148,7 +175,7 @@ impl Parser {
         Ok(left)
     }
 
-    pub fn equality(&mut self) -> Result<Expression, String> {
+    pub fn equality(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.comparison()?;
         while self.check(&TokenType::EqualEqual) || self.check(&TokenType::BangEqual) {
             let operator = match self.peek().token_type {
@@ -163,7 +190,18 @@ impl Parser {
         Ok(left)
     }
 
-    pub fn expression(&mut self) -> Result<Expression, String> {
+    pub fn expression(&mut self) -> Result<Expression, ParseError> {
         self.equality()
     }
+
+    fn synchronize(&mut self) {
+    self.advance();
+    while !self.is_at_end() {
+        match self.peek().token_type {
+            TokenType::If | TokenType::While | TokenType::For |
+            TokenType::Return | TokenType::Var | TokenType::Print => return,
+            _ => { self.advance(); }
+        }
+    }
+}
 }
