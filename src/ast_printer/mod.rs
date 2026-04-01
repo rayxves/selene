@@ -12,6 +12,7 @@ impl ExprVisitor for AstPrinter {
         &mut self,
         left: &Expression,
         operator: &crate::token::BinaryOp,
+        _line: &u64,
         right: &Expression,
     ) -> Self::Output {
         let op = match operator {
@@ -43,6 +44,7 @@ impl ExprVisitor for AstPrinter {
     fn visit_unary(
         &mut self,
         unary_op: &crate::token::UnaryOp,
+        _line: &u64,
         expr: &Expression,
     ) -> Self::Output {
         let op = match unary_op {

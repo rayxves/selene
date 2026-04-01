@@ -1,12 +1,13 @@
 mod ast_printer;
 mod expr;
+mod interpreter;
 mod parser;
 mod scanner;
 mod token;
 
 use scanner::Scanner;
 
-use crate::{ast_printer::AstPrinter, parser::Parser};
+use crate::{ast_printer::AstPrinter, interpreter::Interpreter, parser::Parser};
 
 fn main() {
     let casos = vec![
@@ -21,16 +22,8 @@ fn main() {
     ];
 
     for caso in casos {
-        println!("\n--- Testando: {} ---", caso);
         let mut scanner = Scanner::new(caso.to_string());
         let tokens = scanner.scan_tokens();
-
-        for token in &tokens {
-            println!(
-                "{:?} | lexeme: '{}' | linha: {}",
-                token.token_type, token.lexeme, token.line
-            );
-        }
 
         let mut parser = Parser::new(tokens);
         let expr = parser.expression();
@@ -41,8 +34,15 @@ fn main() {
 
         let mut printer = AstPrinter;
         match expr {
-            Ok(e) => println!("{}", e.accept(&mut printer)),
-            Err(_) => {} 
+            Ok(e) => {
+                println!("{}", e.accept(&mut printer));
+                let mut interpreter = Interpreter {};
+                match interpreter.evaluate(&e) {
+                    Ok(value) => println!("{:?}", value),
+                    Err(err) => println!("Erro na linha {}: {}", err.line, err.message),
+                }
+            }
+            Err(_) => {}
         }
     }
 }

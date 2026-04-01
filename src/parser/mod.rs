@@ -109,16 +109,17 @@ impl Parser {
     }
 
     pub fn unary(&mut self) -> Result<Expression, ParseError> {
+        let line = self.peek().line;
         match &self.peek().token_type {
             TokenType::Bang => {
                 self.advance();
                 let expr = self.unary()?;
-                Ok(Expression::Unary(UnaryOp::Bang, Box::new(expr)))
+                Ok(Expression::Unary(UnaryOp::Bang, line, Box::new(expr)))
             }
             TokenType::Minus => {
                 self.advance();
                 let expr = self.unary()?;
-                Ok(Expression::Unary(UnaryOp::Minus, Box::new(expr)))
+                Ok(Expression::Unary(UnaryOp::Minus, line, Box::new(expr)))
             }
             _ => self.primary(),
         }
@@ -127,6 +128,7 @@ impl Parser {
     pub fn factor(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.unary()?;
         while self.check(&TokenType::Slash) || self.check(&TokenType::Star) {
+            let line = self.peek().line;
             let operator = match self.peek().token_type {
                 TokenType::Slash => BinaryOp::Slash,
                 TokenType::Star => BinaryOp::Star,
@@ -134,7 +136,7 @@ impl Parser {
             };
             self.advance();
             let right = self.unary()?;
-            left = Expression::Binary(Box::new(left), operator, Box::new(right));
+            left = Expression::Binary(Box::new(left), operator, line, Box::new(right));
         }
         Ok(left)
     }
@@ -142,6 +144,7 @@ impl Parser {
     pub fn term(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.factor()?;
         while self.check(&TokenType::Plus) || self.check(&TokenType::Minus) {
+            let line = self.peek().line;
             let operator = match self.peek().token_type {
                 TokenType::Plus => BinaryOp::Plus,
                 TokenType::Minus => BinaryOp::Minus,
@@ -149,7 +152,7 @@ impl Parser {
             };
             self.advance();
             let right = self.factor()?;
-            left = Expression::Binary(Box::new(left), operator, Box::new(right));
+            left = Expression::Binary(Box::new(left), operator, line, Box::new(right));
         }
         Ok(left)
     }
@@ -161,6 +164,7 @@ impl Parser {
             || self.check(&TokenType::GreaterEqual)
             || self.check(&TokenType::LessEqual)
         {
+            let line = self.peek().line;
             let operator = match self.peek().token_type {
                 TokenType::Greater => BinaryOp::Greater,
                 TokenType::GreaterEqual => BinaryOp::GreaterEqual,
@@ -170,7 +174,7 @@ impl Parser {
             };
             self.advance();
             let right = self.term()?;
-            left = Expression::Binary(Box::new(left), operator, Box::new(right));
+            left = Expression::Binary(Box::new(left), operator, line, Box::new(right));
         }
         Ok(left)
     }
@@ -178,6 +182,7 @@ impl Parser {
     pub fn equality(&mut self) -> Result<Expression, ParseError> {
         let mut left = self.comparison()?;
         while self.check(&TokenType::EqualEqual) || self.check(&TokenType::BangEqual) {
+            let line = self.peek().line;
             let operator = match self.peek().token_type {
                 TokenType::EqualEqual => BinaryOp::EqualEqual,
                 TokenType::BangEqual => BinaryOp::BangEqual,
@@ -185,7 +190,7 @@ impl Parser {
             };
             self.advance();
             let right = self.comparison()?;
-            left = Expression::Binary(Box::new(left), operator, Box::new(right));
+            left = Expression::Binary(Box::new(left), operator, line, Box::new(right));
         }
         Ok(left)
     }
@@ -195,13 +200,19 @@ impl Parser {
     }
 
     fn synchronize(&mut self) {
-    self.advance();
-    while !self.is_at_end() {
-        match self.peek().token_type {
-            TokenType::If | TokenType::While | TokenType::For |
-            TokenType::Return | TokenType::Var | TokenType::Print => return,
-            _ => { self.advance(); }
+        self.advance();
+        while !self.is_at_end() {
+            match self.peek().token_type {
+                TokenType::If
+                | TokenType::While
+                | TokenType::For
+                | TokenType::Return
+                | TokenType::Var
+                | TokenType::Print => return,
+                _ => {
+                    self.advance();
+                }
+            }
         }
     }
-}
 }
