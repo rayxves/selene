@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use crate::{
     expr::{ExprVisitor, Expression},
+    stmt::{Statement, StmtVisitor},
     token::{BinaryOp, TokenLiteral, UnaryOp},
 };
 
@@ -9,6 +12,23 @@ pub enum SeleneValue {
     Boolean(bool),
     String(String),
     Null,
+}
+
+impl SeleneValue {
+    pub fn to_display(&self) -> String {
+        match self {
+            SeleneValue::Number(n) => {
+                if *n == n.floor() {
+                    format!("{}", *n as i64)
+                } else {
+                    format!("{}", n)
+                }
+            }
+            SeleneValue::Boolean(b) => format!("{}", b),
+            SeleneValue::String(s) => s.clone(),
+            SeleneValue::Null => "null".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -23,7 +43,9 @@ impl RuntimeError {
     }
 }
 
-pub struct Interpreter {}
+pub struct Interpreter {
+    environment: HashMap<String, SeleneValue>,
+}
 
 impl ExprVisitor for Interpreter {
     type Output = Result<SeleneValue, RuntimeError>;
@@ -69,7 +91,10 @@ impl ExprVisitor for Interpreter {
             BinaryOp::Slash => {
                 let (a, b) = self.extract_numbers(left, right, *line, "/")?;
                 if b == 0.0 {
-                    return Err(RuntimeError::new(*line, "Não é possível realizar uma divisão por zero.".to_string()));
+                    return Err(RuntimeError::new(
+                        *line,
+                        "Não é possível realizar uma divisão por zero.".to_string(),
+                    ));
                 }
                 Ok(SeleneValue::Number(a / b))
             }
@@ -141,13 +166,55 @@ impl ExprVisitor for Interpreter {
     }
 
     fn visit_grouping(&mut self, expr: &Expression) -> Self::Output {
-         self.evaluate(expr)
+        self.evaluate(expr)
+    }
+
+    fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output {
+        match self.environment.get(name) {
+            Some(value) => Ok(value.clone()),
+            None => Err(RuntimeError::new(
+                line,
+                format!("Variável '{}' não definida.", name),
+            )),
+        }
+    }
+}
+
+impl StmtVisitor for Interpreter {
+    type Output = Result<(), RuntimeError>;
+
+    fn visit_print(&mut self, expr: &Expression) -> Self::Output {
+        let value = self.evaluate(expr)?;
+        println!("{}", value.to_display());
+        Ok(())
+    }
+
+    fn visit_expr_statement(&mut self, expr: &Expression) -> Self::Output {
+        self.evaluate(expr)?;
+        Ok(())
+    }
+
+    fn visit_var(&mut self, name: &String, expr: Option<&Expression>) -> Self::Output {
+        let value;
+        match expr {
+            Some(e) => value = self.evaluate(e)?,
+
+            None => value = SeleneValue::Null,
+        }
+        self.environment.insert(name.clone(), value);
+        Ok(())
     }
 }
 
 impl Interpreter {
+    pub fn new() -> Interpreter {
+        Interpreter {
+            environment: HashMap::new(),
+        }
+    }
+
     pub fn evaluate(&mut self, expr: &Expression) -> Result<SeleneValue, RuntimeError> {
-         expr.accept(self)
+        expr.accept(self)
     }
 
     pub fn is_truthy(value: &SeleneValue) -> bool {
@@ -174,6 +241,16 @@ impl Interpreter {
                 line,
                 format!("Operandos do '{}' devem ser números.", operator),
             )),
+        }
+    }
+
+    pub fn interpret(&mut self, statements: Vec<Statement>) {
+        for stmt in statements {
+            let statment = stmt.accept(self);
+            match statment {
+                Ok(_) => {}
+                Err(e) => println!("Erro na linha {}: {}", e.line, e.message),
+            }
         }
     }
 }

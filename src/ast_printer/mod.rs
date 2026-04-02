@@ -58,4 +58,8 @@ impl ExprVisitor for AstPrinter {
     fn visit_grouping(&mut self, expr: &Expression) -> Self::Output {
         format!("(group {})", expr.accept(self))
     }
+    
+    fn visit_variable(&mut self, value: &String, _line: u64) -> Self::Output {
+        value.to_string()
+    }
 }
