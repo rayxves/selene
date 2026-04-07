@@ -5,12 +5,14 @@ pub trait StmtVisitor {
     fn visit_print(&mut self, expr: &Expression) -> Self::Output;
     fn visit_expr_statement(&mut self, expr: &Expression) -> Self::Output;
     fn visit_var(&mut self, name: &String, expr: Option<&Expression>) -> Self::Output;
+    fn visit_block(&mut self, statments: &Vec<Statement>) -> Self::Output;
 }
 
 pub enum Statement {
     Print(Expression),
     ExprStatement(Expression),
     Var(String, Option<Expression>),
+    Block(Vec<Statement>)
 }
 
 impl Statement {
@@ -19,6 +21,7 @@ impl Statement {
             Statement::ExprStatement(expr) => visitor.visit_expr_statement(expr),
             Statement::Print(expr) => visitor.visit_print(expr),
             Statement::Var(name, expr) => visitor.visit_var(name, expr.as_ref()),
+            Statement::Block(statments) => visitor.visit_block(statments)
         }
     }
 }

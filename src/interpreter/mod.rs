@@ -1,50 +1,17 @@
-use std::collections::HashMap;
+mod environment;
+mod values;
+
+pub use values::{RuntimeError, SeleneValue};
 
 use crate::{
     expr::{ExprVisitor, Expression},
+    interpreter::environment::Environment,
     stmt::{Statement, StmtVisitor},
     token::{BinaryOp, TokenLiteral, UnaryOp},
 };
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum SeleneValue {
-    Number(f64),
-    Boolean(bool),
-    String(String),
-    Null,
-}
-
-impl SeleneValue {
-    pub fn to_display(&self) -> String {
-        match self {
-            SeleneValue::Number(n) => {
-                if *n == n.floor() {
-                    format!("{}", *n as i64)
-                } else {
-                    format!("{}", n)
-                }
-            }
-            SeleneValue::Boolean(b) => format!("{}", b),
-            SeleneValue::String(s) => s.clone(),
-            SeleneValue::Null => "null".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct RuntimeError {
-    pub line: u64,
-    pub message: String,
-}
-
-impl RuntimeError {
-    pub fn new(line: u64, message: String) -> RuntimeError {
-        RuntimeError { line, message }
-    }
-}
-
 pub struct Interpreter {
-    environment: HashMap<String, SeleneValue>,
+    environment: Environment,
 }
 
 impl ExprVisitor for Interpreter {
@@ -170,13 +137,12 @@ impl ExprVisitor for Interpreter {
     }
 
     fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output {
-        match self.environment.get(name) {
-            Some(value) => Ok(value.clone()),
-            None => Err(RuntimeError::new(
-                line,
-                format!("Variável '{}' não definida.", name),
-            )),
-        }
+        self.environment.get(name, line)
+    }
+
+    fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression) -> Self::Output {
+        let value = self.evaluate(expr)?;
+        self.environment.assign(name.clone(), line, value)
     }
 }
 
@@ -201,7 +167,25 @@ impl StmtVisitor for Interpreter {
 
             None => value = SeleneValue::Null,
         }
-        self.environment.insert(name.clone(), value);
+        self.environment.define(name.clone(), value);
+        Ok(())
+    }
+
+    fn visit_block(&mut self, statments: &Vec<Statement>) -> Self::Output {
+        let children: Environment =
+            Environment::new_enclosed(std::mem::replace(&mut self.environment, Environment::new()));
+        self.environment = children;
+        for stmt in statments {
+            match stmt.accept(self) {
+                Ok(_v) => {}
+                Err(e) => {
+                    self.environment = *self.environment.enclosing.take().unwrap();
+                    return Err(e);
+                }
+            }
+        }
+
+        self.environment = *self.environment.enclosing.take().unwrap();
         Ok(())
     }
 }
@@ -209,7 +193,7 @@ impl StmtVisitor for Interpreter {
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            environment: HashMap::new(),
+            environment: Environment::new(),
         }
     }
 

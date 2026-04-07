@@ -12,22 +12,32 @@ use crate::{interpreter::Interpreter, parser::Parser};
 
 fn main() {
     let programa = "
-        var x = 10;
-        var y = 20;
-        print x + y;
-        print x * 2;
-        var nome = \"selene\";
-        print nome;
-    ";
+    var a = \"global\";
+    {
+        var a = \"local\";
+        print a;
+        {
+            var a = \"sla bicho\";
+            print a;
+            print a + a;
+        }
+        print \"chegou aqui\";
+        print a;
+    }
+    print a;
+";
 
     let mut scanner = Scanner::new(programa.to_string());
     let tokens = scanner.scan_tokens();
 
     let mut parser = Parser::new(tokens);
     let statements = parser.parse();
+    if !parser.errors.is_empty() {
+        for error in &parser.errors {
+            println!("Erro na linha {}: {}", error.token.line, error.message);
+        }
 
-    for error in &parser.errors {
-        println!("Erro na linha {}: {}", error.token.line, error.message);
+        return;
     }
 
     let mut interpreter = Interpreter::new();

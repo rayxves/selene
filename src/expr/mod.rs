@@ -13,6 +13,7 @@ pub trait ExprVisitor {
     fn visit_unary(&mut self, unary_op: &UnaryOp, line: &u64, expr: &Expression) -> Self::Output;
     fn visit_grouping(&mut self, expr: &Expression) -> Self::Output;
     fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output;
+    fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression) -> Self::Output;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -22,6 +23,7 @@ pub enum Expression {
     Grouping(Box<Expression>),
     Literal(TokenLiteral),
     Variable(String, u64),
+    Assign(String, u64, Box<Expression>),
 }
 
 impl Expression {
@@ -33,7 +35,8 @@ impl Expression {
             Expression::Literal(literal) => visitor.visit_literal(literal),
             Expression::Grouping(expr) => visitor.visit_grouping(expr),
             Expression::Unary(unary_op, line, expr) => visitor.visit_unary(unary_op, line, expr),
-            Expression::Variable(name, line) => visitor.visit_variable(name, *line)
+            Expression::Variable(name, line) => visitor.visit_variable(name, *line),
+            Expression::Assign(name, line, expr) => visitor.visit_assign(name, *line, expr),
         }
     }
 }
