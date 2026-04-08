@@ -1,33 +1,38 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::interpreter::{RuntimeError, SeleneValue};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Environment {
     pub values: HashMap<String, SeleneValue>,
-    pub enclosing: Option<Box<Environment>>,
+    pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
-    pub fn new() -> Environment {
-        Environment {
+    pub fn new() -> Rc<RefCell<Environment>> {
+        Rc::new(RefCell::new(Environment {
             values: HashMap::new(),
             enclosing: None,
-        }
+        }))
     }
 
-    pub fn new_enclosed(parent: Environment) -> Environment {
-        Environment {
+    pub fn new_enclosed(parent: Rc<RefCell<Environment>>) -> Rc<RefCell<Environment>> {
+        Rc::new(RefCell::new(Environment {
             values: HashMap::new(),
-            enclosing: Some(Box::new(parent)),
-        }
+            enclosing: Some(parent),
+        }))
     }
 
-    pub fn get(&self, name: &str, line: u64) -> Result<SeleneValue, RuntimeError> {
-        match self.values.get(name) {
+    pub fn get(
+        env: &Rc<RefCell<Environment>>,
+        name: &str,
+        line: u64,
+    ) -> Result<SeleneValue, RuntimeError> {
+        let borrowed = env.borrow();
+        match borrowed.values.get(name) {
             Some(v) => Ok(v.clone()),
-            None => match &self.enclosing {
-                Some(parent) => parent.get(name, line),
+            None => match &borrowed.enclosing {
+                Some(parent) => Environment::get(parent, name, line),
                 None => Err(RuntimeError::new(
                     line,
                     format!("Variável '{}' não definida.", name),
@@ -36,34 +41,30 @@ impl Environment {
         }
     }
 
-    pub fn define(&mut self, name: String, value: SeleneValue) {
-        self.values.insert(name, value);
+    pub fn define(env: &Rc<RefCell<Environment>>, name: String, value: SeleneValue) {
+        env.borrow_mut().values.insert(name, value);
     }
-
     pub fn assign(
-        &mut self,
+        env: &Rc<RefCell<Environment>>,
         name: String,
         line: u64,
         value: SeleneValue,
     ) -> Result<SeleneValue, RuntimeError> {
-        match self.values.get(&name) {
-            Some(_v) => {
-                let val = self.values.insert(name.clone(), value.clone());
-                match val {
-                    Some(_v) => Ok(value),
-                    None => Err(RuntimeError::new(
-                        line,
-                        format!("Variável '{}' não definida.", name),
-                    )),
+        let mut borrowed = env.borrow_mut();
+        if borrowed.values.contains_key(&name) {
+            borrowed.values.insert(name, value.clone());
+            Ok(value)
+        } else {
+            match borrowed.enclosing.clone() {
+                Some(parent) => {
+                    drop(borrowed); 
+                    Environment::assign(&parent, name, line, value)
                 }
-            }
-            None => match &mut self.enclosing {
-                Some(parent) => parent.assign(name, line, value),
                 None => Err(RuntimeError::new(
                     line,
                     format!("Variável '{}' não definida.", name),
                 )),
-            },
+            }
         }
     }
 }

@@ -1,6 +1,8 @@
 mod environment;
 mod values;
 
+use std::{cell::RefCell, rc::Rc};
+
 pub use values::{RuntimeError, SeleneValue};
 
 use crate::{
@@ -11,7 +13,7 @@ use crate::{
 };
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Rc<RefCell<Environment>>,
 }
 
 impl ExprVisitor for Interpreter {
@@ -137,12 +139,12 @@ impl ExprVisitor for Interpreter {
     }
 
     fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output {
-        self.environment.get(name, line)
+        Environment::get(&self.environment, name, line)
     }
 
     fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression) -> Self::Output {
         let value = self.evaluate(expr)?;
-        self.environment.assign(name.clone(), line, value)
+        Environment::assign(&self.environment, name.clone(), line, value)
     }
 }
 
@@ -161,35 +163,34 @@ impl StmtVisitor for Interpreter {
     }
 
     fn visit_var(&mut self, name: &String, expr: Option<&Expression>) -> Self::Output {
-        let value;
-        match expr {
-            Some(e) => value = self.evaluate(e)?,
-
-            None => value = SeleneValue::Null,
-        }
-        self.environment.define(name.clone(), value);
+        let value = match expr {
+            Some(e) => self.evaluate(e)?,
+            None => SeleneValue::Null,
+        };
+        Environment::define(&self.environment, name.clone(), value);
         Ok(())
     }
 
-    fn visit_block(&mut self, statments: &Vec<Statement>) -> Self::Output {
-        let children: Environment =
-            Environment::new_enclosed(std::mem::replace(&mut self.environment, Environment::new()));
-        self.environment = children;
-        for stmt in statments {
+    fn visit_block(&mut self, statements: &Vec<Statement>) -> Self::Output {
+        let child = Environment::new_enclosed(Rc::clone(&self.environment));
+        let previous = Rc::clone(&self.environment);
+        self.environment = child;
+
+        let mut result = Ok(());
+        for stmt in statements {
             match stmt.accept(self) {
-                Ok(_v) => {}
+                Ok(_) => {}
                 Err(e) => {
-                    self.environment = *self.environment.enclosing.take().unwrap();
-                    return Err(e);
+                    result = Err(e);
+                    break;
                 }
             }
         }
 
-        self.environment = *self.environment.enclosing.take().unwrap();
-        Ok(())
+        self.environment = previous;
+        result
     }
 }
-
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
