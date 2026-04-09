@@ -6,7 +6,7 @@ use crate::{
 };
 
 impl Parser {
-    fn error(&mut self, message: String) -> ParseError {
+    pub fn error(&mut self, message: String) -> ParseError {
         let error = ParseError::new(self.peek().clone(), message);
         self.errors.push(error.clone());
         error
@@ -93,6 +93,8 @@ impl Parser {
             TokenType::If => self.if_statement(),
             TokenType::While => self.while_statement(),
             TokenType::For => self.for_statement(),
+            TokenType::Function => self.function_statement(),
+            TokenType::Return => self.return_statement(),
             _ => match self.expr_statement() {
                 Ok(stmt) => Some(stmt),
                 Err(_) => {
@@ -277,8 +279,7 @@ impl Parser {
 
         match self.statement() {
             Some(body) => {
-                let while_body =
-                    Statement::Block(vec![body, Statement::ExprStatement(increment)]);
+                let while_body = Statement::Block(vec![body, Statement::ExprStatement(increment)]);
                 let mut outer = vec![Statement::While(condition, Box::new(while_body))];
                 if let Some(init) = initializer {
                     outer.insert(0, init);
@@ -286,6 +287,97 @@ impl Parser {
                 Some(Statement::Block(outer))
             }
             None => None,
+        }
+    }
+
+    pub fn function_statement(&mut self) -> Option<Statement> {
+        self.advance();
+        let name: String;
+        match &self.peek().token_type {
+            TokenType::Identifier(identifier) => name = identifier.clone(),
+            _ => {
+                self.error(format!(
+                    "Esperava um nome, mas encontrei '{}'.",
+                    self.peek().lexeme
+                ));
+                return None;
+            }
+        }
+        let mut params = Vec::new();
+        self.advance();
+        match self.peek().token_type {
+            TokenType::LeftParen => {
+                self.advance();
+                while !self.check(&TokenType::RightParen) {
+                    match &self.peek().token_type {
+                        TokenType::Identifier(name) => {
+                            params.push(name.clone());
+                            self.advance();
+                            if self.check(&TokenType::Comma) {
+                                self.advance();
+                            } else if !self.check(&TokenType::RightParen) {
+                                self.error(format!(
+                                    "Esperava ',' ou ')' após parâmetro, mas encontrei '{}'.",
+                                    self.peek().lexeme
+                                ));
+                                return None;
+                            }
+                        }
+                        _ => {
+                            self.error(format!(
+                                "Esperava um nome de parâmetro, mas encontrei '{}'.",
+                                self.peek().lexeme
+                            ));
+                            return None;
+                        }
+                    }
+                }
+                self.advance();
+                match self.block_statement() {
+                    Some(Statement::Block(stmts)) => {
+                        return Some(Statement::Function(name, params, stmts));
+                    }
+                    _ => return None,
+                }
+            }
+            _ => {
+                self.error(format!(
+                    "Esperava '(' após nome da função, mas encontrei '{}'.",
+                    self.peek().lexeme
+                ));
+                return None;
+            }
+        }
+    }
+
+    fn return_statement(&mut self) -> Option<Statement> {
+        self.advance();
+        if self.check(&TokenType::Semicolon) {
+            self.advance();
+            return Some(Statement::Return(self.peek().line, None));
+        } else {
+            match self.expression() {
+                Ok(expr) => {
+                    let expr = Some(Statement::Return(self.peek().line, Some(expr)));
+                    if self.check(&TokenType::Semicolon) {
+                        self.advance();
+                        return expr;
+                    }
+
+                    self.error(format!(
+                        "Esperava ';' após retorno, mas encontrei '{}'.",
+                        self.peek().lexeme
+                    ));
+                    return None;
+                }
+                Err(_e) => {
+                    self.error(format!(
+                        "Esperava um valor válido de retorno, mas encontrei '{}'.",
+                        self.peek().lexeme
+                    ));
+                    return None;
+                }
+            }
         }
     }
 }

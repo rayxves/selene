@@ -1,18 +1,30 @@
 mod environment;
 mod values;
-
-use std::{cell::RefCell, rc::Rc};
-
-pub use values::{RuntimeError, SeleneValue};
-
 use crate::{
     expr::{ExprVisitor, Expression},
-    interpreter::environment::Environment,
+    interpreter::{
+        environment::Environment,
+        values::{ClockFn, SeleneFunction},
+    },
     stmt::{Statement, StmtVisitor},
     token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
 };
+use std::fmt::Debug;
+use std::{cell::RefCell, rc::Rc};
+pub use values::{RuntimeError, SeleneValue};
+
+pub trait SeleneCallable: Debug {
+    fn arity(&self) -> usize;
+    fn call(
+        &self,
+        interpreter: &mut Interpreter,
+        args: Vec<SeleneValue>,
+    ) -> Result<SeleneValue, RuntimeError>;
+    fn name(&self) -> String;
+}
 
 pub struct Interpreter {
+    pub globals: Rc<RefCell<Environment>>,
     environment: Rc<RefCell<Environment>>,
 }
 
@@ -21,16 +33,15 @@ impl ExprVisitor for Interpreter {
 
     fn visit_binary(
         &mut self,
-        left: &crate::expr::Expression,
-        operator: &crate::token::BinaryOp,
+        left: &Expression,
+        operator: &BinaryOp,
         line: &u64,
-        right: &crate::expr::Expression,
+        right: &Expression,
     ) -> Self::Output {
         match operator {
             BinaryOp::Plus => {
                 let value_left = self.evaluate(left)?;
                 let value_right = self.evaluate(right)?;
-
                 match (value_left, value_right) {
                     (SeleneValue::Number(a), SeleneValue::Number(b)) => {
                         Ok(SeleneValue::Number(a + b))
@@ -38,32 +49,32 @@ impl ExprVisitor for Interpreter {
                     (SeleneValue::String(a), SeleneValue::String(b)) => {
                         Ok(SeleneValue::String(a + &b))
                     }
-                    (SeleneValue::Number(_), _) => Err(RuntimeError::new(
-                        *line,
-                        "Operando direito do '+' deve ser um número.".to_string(),
-                    )),
-                    (SeleneValue::String(_), _) => Err(RuntimeError::new(
-                        *line,
-                        "Operando direito do '+' deve ser uma string.".to_string(),
-                    )),
-                    _ => Err(RuntimeError::new(
-                        *line,
-                        "Operandos do '+' devem ser dois números ou duas strings.".to_string(),
-                    )),
+                    (SeleneValue::Number(_), _) => Err(RuntimeError::Error {
+                        line: *line,
+                        message: "Operando direito do '+' deve ser um número.".to_string(),
+                    }),
+                    (SeleneValue::String(_), _) => Err(RuntimeError::Error {
+                        line: *line,
+                        message: "Operando direito do '+' deve ser uma string.".to_string(),
+                    }),
+                    _ => Err(RuntimeError::Error {
+                        line: *line,
+                        message: "Operandos do '+' devem ser dois números ou duas strings."
+                            .to_string(),
+                    }),
                 }
             }
             BinaryOp::Minus => {
                 let (a, b) = self.extract_numbers(left, right, *line, "-")?;
                 Ok(SeleneValue::Number(a - b))
             }
-
             BinaryOp::Slash => {
                 let (a, b) = self.extract_numbers(left, right, *line, "/")?;
                 if b == 0.0 {
-                    return Err(RuntimeError::new(
-                        *line,
-                        "Não é possível realizar uma divisão por zero.".to_string(),
-                    ));
+                    return Err(RuntimeError::Error {
+                        line: *line,
+                        message: "Não é possível realizar uma divisão por zero.".to_string(),
+                    });
                 }
                 Ok(SeleneValue::Number(a / b))
             }
@@ -100,7 +111,7 @@ impl ExprVisitor for Interpreter {
         }
     }
 
-    fn visit_literal(&mut self, literal: &crate::token::TokenLiteral) -> Self::Output {
+    fn visit_literal(&mut self, literal: &TokenLiteral) -> Self::Output {
         match literal {
             TokenLiteral::Number(n) => Ok(SeleneValue::Number(*n)),
             TokenLiteral::Boolean(b) => Ok(SeleneValue::Boolean(*b)),
@@ -109,24 +120,18 @@ impl ExprVisitor for Interpreter {
         }
     }
 
-    fn visit_unary(
-        &mut self,
-        unary_op: &crate::token::UnaryOp,
-        line: &u64,
-        expr: &crate::expr::Expression,
-    ) -> Self::Output {
+    fn visit_unary(&mut self, unary_op: &UnaryOp, line: &u64, expr: &Expression) -> Self::Output {
         match unary_op {
             UnaryOp::Minus => {
                 let value = self.evaluate(expr)?;
                 match value {
                     SeleneValue::Number(n) => Ok(SeleneValue::Number(-n)),
-                    _ => Err(RuntimeError::new(
-                        *line,
-                        "Operando deve ser um número".to_string(),
-                    )),
+                    _ => Err(RuntimeError::Error {
+                        line: *line,
+                        message: "Operando deve ser um número.".to_string(),
+                    }),
                 }
             }
-
             UnaryOp::Bang => {
                 let value = self.evaluate(expr)?;
                 Ok(SeleneValue::Boolean(!Interpreter::is_truthy(&value)))
@@ -150,7 +155,7 @@ impl ExprVisitor for Interpreter {
     fn visit_logical(
         &mut self,
         left: &Expression,
-        operator: &crate::token::LogicalOp,
+        operator: &LogicalOp,
         _line: &u64,
         right: &Expression,
     ) -> Self::Output {
@@ -165,10 +170,45 @@ impl ExprVisitor for Interpreter {
             LogicalOp::Or => {
                 let left_val = self.evaluate(left)?;
                 if Interpreter::is_truthy(&left_val) {
-                    return Ok(left_val); 
+                    return Ok(left_val);
                 }
                 self.evaluate(right)
             }
+        }
+    }
+
+    fn visit_call(
+        &mut self,
+        callee: &Expression,
+        args: &Vec<Expression>,
+        paren: &crate::token::Token,
+    ) -> Self::Output {
+        let callee_value = self.evaluate(callee)?;
+        match callee_value {
+            SeleneValue::Function(func) => {
+                let mut evaluated_args: Vec<SeleneValue> = Vec::new();
+                for arg in args {
+                    evaluated_args.push(arg.accept(self)?);
+                }
+                if evaluated_args.len() != func.arity() {
+                    return Err(RuntimeError::Error {
+                        line: paren.line,
+                        message: format!(
+                            "Esperava {} argumento(s), mas recebeu {}.",
+                            func.arity(),
+                            evaluated_args.len()
+                        ),
+                    });
+                }
+                func.call(self, evaluated_args)
+            }
+            _ => Err(RuntimeError::Error {
+                line: paren.line,
+                message: format!(
+                    "Expressão '{}' não é uma função e não pode ser chamada.",
+                    paren.lexeme
+                ),
+            }),
         }
     }
 }
@@ -238,11 +278,50 @@ impl StmtVisitor for Interpreter {
         }
         Ok(())
     }
+
+    fn visit_function(
+        &mut self,
+        name: &String,
+        params: &Vec<String>,
+        stmts: &Vec<Statement>,
+    ) -> Self::Output {
+        let func = SeleneFunction {
+            name: name.clone(),
+            params: params.clone(),
+            body: stmts.clone(),
+            closure: Rc::clone(&self.environment)
+        };
+        Environment::define(
+            &self.environment,
+            name.clone(),
+            SeleneValue::Function(Rc::new(func)),
+        );
+        Ok(())
+    }
+
+    fn visit_return(&mut self, _line: u64, value: Option<&Expression>) -> Self::Output {
+        match value {
+            Some(val) => match val.accept(self) {
+                Ok(v) => Err(RuntimeError::Return(v)),
+                Err(err) => Err(err),
+            },
+            None => Err(RuntimeError::Return(SeleneValue::Null)),
+        }
+    }
 }
+
 impl Interpreter {
     pub fn new() -> Interpreter {
+        let globals = Environment::new();
+        Environment::define(
+            &globals,
+            "clock".to_string(),
+            SeleneValue::Function(Rc::new(ClockFn)),
+        );
+        let environment = Rc::clone(&globals);
         Interpreter {
-            environment: Environment::new(),
+            globals,
+            environment,
         }
     }
 
@@ -267,23 +346,47 @@ impl Interpreter {
     ) -> Result<(f64, f64), RuntimeError> {
         let value_left = self.evaluate(left)?;
         let value_right = self.evaluate(right)?;
-
         match (value_left, value_right) {
             (SeleneValue::Number(a), SeleneValue::Number(b)) => Ok((a, b)),
-            _ => Err(RuntimeError::new(
+            _ => Err(RuntimeError::Error {
                 line,
-                format!("Operandos do '{}' devem ser números.", operator),
-            )),
+                message: format!("Operandos do '{}' devem ser números.", operator),
+            }),
         }
     }
 
     pub fn interpret(&mut self, statements: Vec<Statement>) {
         for stmt in statements {
-            let statment = stmt.accept(self);
-            match statment {
+            match stmt.accept(self) {
                 Ok(_) => {}
-                Err(e) => println!("Erro na linha {}: {}", e.line, e.message),
+                Err(RuntimeError::Error { line, message }) => {
+                    println!("Erro na linha {}: {}", line, message)
+                }
+                Err(RuntimeError::Return(_)) => {}
             }
         }
+    }
+
+    pub fn execute_block(
+        &mut self,
+        env: Rc<RefCell<Environment>>,
+        statements: &Vec<Statement>,
+    ) -> Result<(), RuntimeError> {
+        let previous = Rc::clone(&self.environment);
+        self.environment = env;
+
+        let mut result = Ok(());
+        for stmt in statements {
+            match stmt.accept(self) {
+                Ok(_) => {}
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
+            }
+        }
+
+        self.environment = previous;
+        result
     }
 }

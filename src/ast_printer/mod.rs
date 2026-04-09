@@ -77,10 +77,24 @@ impl ExprVisitor for AstPrinter {
         let op = match operator {
             LogicalOp::And => "and".to_string(),
             LogicalOp::Or => "or".to_string(),
-
         };
         let left_str = left.accept(self);
         let right_str = right.accept(self);
         format!("(left {}, op {}, right {})", left_str, op, right_str)
+    }
+
+    fn visit_call(
+        &mut self,
+        callee: &Expression,
+        args: &Vec<Expression>,
+        _paren: &crate::token::Token,
+    ) -> Self::Output {
+        let callee = callee.accept(self);
+        let args_str = args
+            .iter()
+            .map(|arg| arg.accept(self))
+            .collect::<Vec<String>>()
+            .join(", ");
+        format!("callee: {}, args: {}", callee, args_str)
     }
 }

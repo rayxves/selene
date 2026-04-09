@@ -1,4 +1,4 @@
-use crate::token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp};
+use crate::token::{BinaryOp, LogicalOp, Token, TokenLiteral, UnaryOp};
 
 pub trait ExprVisitor {
     type Output;
@@ -21,6 +21,7 @@ pub trait ExprVisitor {
         line: &u64,
         right: &Expression,
     ) -> Self::Output;
+    fn visit_call(&mut self, callee: &Expression, args: &Vec<Expression>,paren: &Token) -> Self::Output;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -32,6 +33,7 @@ pub enum Expression {
     Variable(String, u64),
     Assign(String, u64, Box<Expression>),
     Logical(Box<Expression>, LogicalOp, u64, Box<Expression>),
+    Call(Box<Expression>, Vec<Expression>, Token)
 }
 
 impl Expression {
@@ -46,6 +48,7 @@ impl Expression {
             Expression::Variable(name, line) => visitor.visit_variable(name, *line),
             Expression::Assign(name, line, expr) => visitor.visit_assign(name, *line, expr),
             Expression::Logical(left, logical_op, line, right) => visitor.visit_logical(left, logical_op, line, right),
+            Expression::Call(callee, args, paren) => visitor.visit_call(callee, args, paren),
         }
     }
 }

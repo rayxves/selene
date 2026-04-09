@@ -33,10 +33,10 @@ impl Environment {
             Some(v) => Ok(v.clone()),
             None => match &borrowed.enclosing {
                 Some(parent) => Environment::get(parent, name, line),
-                None => Err(RuntimeError::new(
+                None => Err(RuntimeError::Error {
                     line,
-                    format!("Variável '{}' não definida.", name),
-                )),
+                    message: format!("Variável '{}' não definida.", name),
+                }),
             },
         }
     }
@@ -44,6 +44,7 @@ impl Environment {
     pub fn define(env: &Rc<RefCell<Environment>>, name: String, value: SeleneValue) {
         env.borrow_mut().values.insert(name, value);
     }
+
     pub fn assign(
         env: &Rc<RefCell<Environment>>,
         name: String,
@@ -57,13 +58,13 @@ impl Environment {
         } else {
             match borrowed.enclosing.clone() {
                 Some(parent) => {
-                    drop(borrowed); 
+                    drop(borrowed);
                     Environment::assign(&parent, name, line, value)
                 }
-                None => Err(RuntimeError::new(
+                None => Err(RuntimeError::Error {
                     line,
-                    format!("Variável '{}' não definida.", name),
-                )),
+                    message: format!("Variável '{}' não definida.", name),
+                }),
             }
         }
     }

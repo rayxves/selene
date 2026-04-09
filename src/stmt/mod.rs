@@ -13,8 +13,11 @@ pub trait StmtVisitor {
         else_stmt: Option<&Statement>,
     ) -> Self::Output;
     fn visit_while(&mut self, expr: &Expression, stmt: &Statement) -> Self::Output;
+    fn visit_function(&mut self, name: &String, params: &Vec<String>, stmts: &Vec<Statement>) -> Self::Output;
+    fn visit_return(&mut self, line: u64, value: Option<&Expression>) -> Self::Output;
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     Print(Expression),
     ExprStatement(Expression),
@@ -22,6 +25,8 @@ pub enum Statement {
     Block(Vec<Statement>),
     If(Expression, Box<Statement>, Option<Box<Statement>>),
     While(Expression, Box<Statement>),
+    Function(String, Vec<String>, Vec<Statement>),
+    Return(u64, Option<Expression>)
 }
 
 impl Statement {
@@ -35,6 +40,8 @@ impl Statement {
                 visitor.visit_if(expr, stmt, else_stmt.as_deref())
             }
             Statement::While(expr, stmt) => visitor.visit_while(expr, stmt),
+            Statement::Function(name, params, stmts) => visitor.visit_function(name, params, stmts),
+            Statement::Return(line, value ) => visitor.visit_return(*line, value.as_ref())
         }
     }
 }

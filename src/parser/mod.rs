@@ -120,6 +120,34 @@ impl Parser {
         }
     }
 
+    pub fn call(&mut self) -> Result<Expression, ParseError> {
+        let mut callee = self.primary()?;
+        while self.check(&TokenType::LeftParen) {
+            let mut args = Vec::new();
+            self.advance();
+            while !self.check(&TokenType::RightParen) {
+                if args.len() > 255 {
+                    self.error("Não é possível ter mais de 255 argumentos.".to_string());
+                }
+                args.push(self.expression()?);
+                if !self.check(&TokenType::Comma) {
+                    break;
+                }
+                self.advance();
+            }
+            if !self.check(&TokenType::RightParen) {
+                return Err(self.error(format!(
+                    "Esperava ')' após argumentos, mas encontrei '{}'.",
+                    self.peek().lexeme
+                )));
+            }
+            let paren = self.peek().clone();
+            self.advance();
+            callee = Expression::Call(Box::new(callee), args, paren);
+        }
+        Ok(callee)
+    }
+
     pub fn unary(&mut self) -> Result<Expression, ParseError> {
         let line = self.peek().line;
         match &self.peek().token_type {
@@ -133,7 +161,7 @@ impl Parser {
                 let operand = self.unary()?;
                 Ok(Expression::Unary(UnaryOp::Minus, line, Box::new(operand)))
             }
-            _ => self.primary(),
+            _ => self.call(),
         }
     }
 
