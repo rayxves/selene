@@ -1,6 +1,6 @@
 use crate::{
     expr::{ExprVisitor, Expression},
-    token::{BinaryOp, TokenLiteral, UnaryOp},
+    token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
 };
 
 pub struct AstPrinter;
@@ -65,5 +65,22 @@ impl ExprVisitor for AstPrinter {
 
     fn visit_assign(&mut self, name: &String, _line: u64, _expr: &Expression) -> Self::Output {
         name.to_string()
+    }
+
+    fn visit_logical(
+        &mut self,
+        left: &Expression,
+        operator: &crate::token::LogicalOp,
+        _line: &u64,
+        right: &Expression,
+    ) -> Self::Output {
+        let op = match operator {
+            LogicalOp::And => "and".to_string(),
+            LogicalOp::Or => "or".to_string(),
+
+        };
+        let left_str = left.accept(self);
+        let right_str = right.accept(self);
+        format!("(left {}, op {}, right {})", left_str, op, right_str)
     }
 }

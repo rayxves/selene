@@ -9,7 +9,7 @@ use crate::{
     expr::{ExprVisitor, Expression},
     interpreter::environment::Environment,
     stmt::{Statement, StmtVisitor},
-    token::{BinaryOp, TokenLiteral, UnaryOp},
+    token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
 };
 
 pub struct Interpreter {
@@ -146,6 +146,31 @@ impl ExprVisitor for Interpreter {
         let value = self.evaluate(expr)?;
         Environment::assign(&self.environment, name.clone(), line, value)
     }
+
+    fn visit_logical(
+        &mut self,
+        left: &Expression,
+        operator: &crate::token::LogicalOp,
+        _line: &u64,
+        right: &Expression,
+    ) -> Self::Output {
+        match operator {
+            LogicalOp::And => {
+                let left_val = self.evaluate(left)?;
+                if !Interpreter::is_truthy(&left_val) {
+                    return Ok(left_val);
+                }
+                self.evaluate(right)
+            }
+            LogicalOp::Or => {
+                let left_val = self.evaluate(left)?;
+                if Interpreter::is_truthy(&left_val) {
+                    return Ok(left_val); 
+                }
+                self.evaluate(right)
+            }
+        }
+    }
 }
 
 impl StmtVisitor for Interpreter {
@@ -189,6 +214,29 @@ impl StmtVisitor for Interpreter {
 
         self.environment = previous;
         result
+    }
+
+    fn visit_if(
+        &mut self,
+        expr: &Expression,
+        stmt: &Statement,
+        else_stmt: Option<&Statement>,
+    ) -> Self::Output {
+        if Interpreter::is_truthy(&self.evaluate(expr)?) {
+            stmt.accept(self)
+        } else {
+            match else_stmt {
+                Some(e) => e.accept(self),
+                None => Ok(()),
+            }
+        }
+    }
+
+    fn visit_while(&mut self, expr: &Expression, stmt: &Statement) -> Self::Output {
+        while Interpreter::is_truthy(&self.evaluate(expr)?) {
+            stmt.accept(self)?
+        }
+        Ok(())
     }
 }
 impl Interpreter {

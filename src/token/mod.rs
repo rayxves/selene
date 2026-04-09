@@ -71,6 +71,12 @@ pub enum UnaryOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
     Star,
     Plus,

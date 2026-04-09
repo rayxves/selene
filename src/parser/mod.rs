@@ -2,7 +2,7 @@ mod statements;
 use crate::{
     expr::Expression,
     stmt::Statement,
-    token::{BinaryOp, Token, TokenLiteral, TokenType, UnaryOp},
+    token::{BinaryOp, LogicalOp, Token, TokenLiteral, TokenType, UnaryOp},
 };
 
 #[derive(Debug, PartialEq, Clone)]
@@ -16,6 +16,7 @@ impl ParseError {
         ParseError { token, message }
     }
 }
+
 pub struct Parser {
     tokens: Vec<Token>,
     current_pos: usize,
@@ -58,20 +59,20 @@ impl Parser {
 
     pub fn primary(&mut self) -> Result<Expression, ParseError> {
         match &self.peek().token_type {
-            TokenType::Number(n) => {
-                let n = *n;
+            TokenType::Number(value) => {
+                let value = *value;
                 self.advance();
-                Ok(Expression::Literal(TokenLiteral::Number(n)))
+                Ok(Expression::Literal(TokenLiteral::Number(value)))
             }
-            TokenType::StringLiteral(n) => {
-                let n = n.to_string();
+            TokenType::StringLiteral(value) => {
+                let value = value.to_string();
                 self.advance();
-                Ok(Expression::Literal(TokenLiteral::StringLiteral(n)))
+                Ok(Expression::Literal(TokenLiteral::StringLiteral(value)))
             }
-            TokenType::Boolean(n) => {
-                let n = *n;
+            TokenType::Boolean(value) => {
+                let value = *value;
                 self.advance();
-                Ok(Expression::Literal(TokenLiteral::Boolean(n)))
+                Ok(Expression::Literal(TokenLiteral::Boolean(value)))
             }
             TokenType::Null => {
                 self.advance();
@@ -88,15 +89,18 @@ impl Parser {
                     _ => {
                         let error = ParseError::new(
                             self.peek().clone(),
-                            "Esperava ')' após expressão.".to_string(),
+                            format!(
+                                "Esperava ')' após expressão, mas encontrei '{}'.",
+                                self.peek().lexeme
+                            ),
                         );
                         self.errors.push(error.clone());
                         Err(error)
                     }
                 }
             }
-            TokenType::Identifier(n) => {
-                let name = n.clone();
+            TokenType::Identifier(name) => {
+                let name = name.clone();
                 let line = self.peek().line;
                 self.advance();
                 Ok(Expression::Variable(name, line))
@@ -121,13 +125,13 @@ impl Parser {
         match &self.peek().token_type {
             TokenType::Bang => {
                 self.advance();
-                let expr = self.unary()?;
-                Ok(Expression::Unary(UnaryOp::Bang, line, Box::new(expr)))
+                let operand = self.unary()?;
+                Ok(Expression::Unary(UnaryOp::Bang, line, Box::new(operand)))
             }
             TokenType::Minus => {
                 self.advance();
-                let expr = self.unary()?;
-                Ok(Expression::Unary(UnaryOp::Minus, line, Box::new(expr)))
+                let operand = self.unary()?;
+                Ok(Expression::Unary(UnaryOp::Minus, line, Box::new(operand)))
             }
             _ => self.primary(),
         }
@@ -203,8 +207,30 @@ impl Parser {
         Ok(left)
     }
 
+    pub fn and(&mut self) -> Result<Expression, ParseError> {
+        let mut left = self.equality()?;
+        while self.check(&TokenType::And) {
+            let line = self.peek().line;
+            self.advance();
+            let right = self.equality()?;
+            left = Expression::Logical(Box::new(left), LogicalOp::And, line, Box::new(right));
+        }
+        Ok(left)
+    }
+
+    pub fn or(&mut self) -> Result<Expression, ParseError> {
+        let mut left = self.and()?;
+        while self.check(&TokenType::Or) {
+            let line = self.peek().line;
+            self.advance();
+            let right = self.and()?;
+            left = Expression::Logical(Box::new(left), LogicalOp::Or, line, Box::new(right));
+        }
+        Ok(left)
+    }
+
     pub fn assigment(&mut self) -> Result<Expression, ParseError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
         if self.check(&TokenType::Equal) {
             self.advance();
             match expr {
@@ -222,9 +248,9 @@ impl Parser {
                 }
             }
         }
-
-        return Ok(expr);
+        Ok(expr)
     }
+
     pub fn expression(&mut self) -> Result<Expression, ParseError> {
         self.assigment()
     }
@@ -232,12 +258,8 @@ impl Parser {
     pub fn parse(&mut self) -> Vec<Statement> {
         let mut statements = Vec::new();
         while !self.is_at_end() {
-            let stmt = self.statement();
-            match stmt {
-                Some(s) => {
-                    statements.push(s);
-                }
-                None => {}
+            if let Some(stmt) = self.statement() {
+                statements.push(stmt);
             }
         }
         statements

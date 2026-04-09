@@ -1,4 +1,4 @@
-use crate::token::{BinaryOp, TokenLiteral, UnaryOp};
+use crate::token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp};
 
 pub trait ExprVisitor {
     type Output;
@@ -14,6 +14,13 @@ pub trait ExprVisitor {
     fn visit_grouping(&mut self, expr: &Expression) -> Self::Output;
     fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output;
     fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression) -> Self::Output;
+    fn visit_logical(
+        &mut self,
+        left: &Expression,
+        operator: &LogicalOp,
+        line: &u64,
+        right: &Expression,
+    ) -> Self::Output;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,6 +31,7 @@ pub enum Expression {
     Literal(TokenLiteral),
     Variable(String, u64),
     Assign(String, u64, Box<Expression>),
+    Logical(Box<Expression>, LogicalOp, u64, Box<Expression>),
 }
 
 impl Expression {
@@ -37,6 +45,7 @@ impl Expression {
             Expression::Unary(unary_op, line, expr) => visitor.visit_unary(unary_op, line, expr),
             Expression::Variable(name, line) => visitor.visit_variable(name, *line),
             Expression::Assign(name, line, expr) => visitor.visit_assign(name, *line, expr),
+            Expression::Logical(left, logical_op, line, right) => visitor.visit_logical(left, logical_op, line, right),
         }
     }
 }
