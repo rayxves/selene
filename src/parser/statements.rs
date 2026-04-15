@@ -351,10 +351,11 @@ impl Parser {
     }
 
     fn return_statement(&mut self) -> Option<Statement> {
+        let line = self.peek().line; 
         self.advance();
         if self.check(&TokenType::Semicolon) {
             self.advance();
-            return Some(Statement::Return(self.peek().line, None));
+            return Some(Statement::Return(line, None));
         } else {
             match self.expression() {
                 Ok(expr) => {

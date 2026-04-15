@@ -5,6 +5,7 @@ mod parser;
 mod scanner;
 mod stmt;
 mod token;
+mod resolver;
 
 use scanner::Scanner;
 
@@ -12,19 +13,15 @@ use crate::{interpreter::Interpreter, parser::Parser};
 
 fn main() {
     let programa = "
-       function makeCounter() {
-        var i = 0;
-        function count() {
-            i = i + 1;
-            print i;
-        }
-        return count;
+   var a = \"global\";
+{
+    function showA() {
+        print a;
     }
-
-    var counter = makeCounter();
-    counter();
-    counter();
-    counter();
+    showA();
+    var a = \"block\";
+    showA();
+}
 ";
 
     let mut scanner = Scanner::new(programa.to_string());

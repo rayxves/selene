@@ -59,11 +59,11 @@ impl ExprVisitor for AstPrinter {
         format!("(group {})", expr.accept(self))
     }
 
-    fn visit_variable(&mut self, value: &String, _line: u64) -> Self::Output {
+    fn visit_variable(&mut self, value: &String, _line: u64, _id: usize) -> Self::Output {
         value.to_string()
     }
 
-    fn visit_assign(&mut self, name: &String, _line: u64, _expr: &Expression) -> Self::Output {
+    fn visit_assign(&mut self, name: &String, _line: u64, _expr: &Expression, _id: usize) -> Self::Output {
         name.to_string()
     }
 

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::interpreter::{RuntimeError, SeleneValue};
+use crate::interpreter::{ RuntimeError, SeleneValue};
 
 #[derive(Debug, Clone)]
 pub struct Environment {
@@ -67,5 +67,41 @@ impl Environment {
                 }),
             }
         }
+    }
+
+    pub fn ancestor(
+        env: &Rc<RefCell<Environment>>,
+        depth: usize,
+    ) -> Rc<RefCell<Environment>> {
+        let mut current = Rc::clone(env);
+        let mut counter = depth;
+        while counter > 0 {
+            let next = current.borrow().enclosing.as_ref().unwrap().clone();
+            current = next;
+            counter -= 1;
+        }
+
+        current
+    }
+
+    pub fn get_at(
+        env: &Rc<RefCell<Environment>>,
+        depth: usize,
+        name: String,
+        line: u64,
+    ) -> Result<SeleneValue, RuntimeError> {
+        let env = Environment::ancestor(env, depth);
+        Environment::get(&env, &name, line)
+    }
+
+    pub fn assign_at(
+        env: &Rc<RefCell<Environment>>,
+        depth: usize,
+        name: String,
+        value: SeleneValue,
+        line: u64,
+    ) -> Result<SeleneValue, RuntimeError> {
+        let env = Environment::ancestor(env, depth);
+        Environment::assign(&env, name, line, value)
     }
 }

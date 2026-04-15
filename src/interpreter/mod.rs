@@ -9,8 +9,8 @@ use crate::{
     stmt::{Statement, StmtVisitor},
     token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
 };
-use std::fmt::Debug;
 use std::{cell::RefCell, rc::Rc};
+use std::{collections::HashMap, fmt::Debug};
 pub use values::{RuntimeError, SeleneValue};
 
 pub trait SeleneCallable: Debug {
@@ -24,8 +24,9 @@ pub trait SeleneCallable: Debug {
 }
 
 pub struct Interpreter {
+    pub locals: HashMap<usize, usize>,
     pub globals: Rc<RefCell<Environment>>,
-    environment: Rc<RefCell<Environment>>,
+    pub environment: Rc<RefCell<Environment>>,
 }
 
 impl ExprVisitor for Interpreter {
@@ -143,13 +144,26 @@ impl ExprVisitor for Interpreter {
         self.evaluate(expr)
     }
 
-    fn visit_variable(&mut self, name: &String, line: u64) -> Self::Output {
-        Environment::get(&self.environment, name, line)
+    fn visit_variable(&mut self, name: &String, line: u64, id: usize) -> Self::Output {
+        match self.locals.get(&id) {
+            Some(d) => Environment::get_at(&self.environment, *d, name.clone(), line),
+            None => Environment::get(&self.globals, name, line),
+        }
     }
 
-    fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression) -> Self::Output {
+    fn visit_assign(
+        &mut self,
+        name: &String,
+        line: u64,
+        expr: &Expression,
+        id: usize,
+    ) -> Self::Output {
         let value = self.evaluate(expr)?;
-        Environment::assign(&self.environment, name.clone(), line, value)
+
+        match self.locals.get(&id) {
+            Some(d) => Environment::assign_at(&self.environment, *d, name.clone(), value, line),
+            None => Environment::assign(&self.globals, name.clone(), line, value),
+        }
     }
 
     fn visit_logical(
@@ -289,7 +303,7 @@ impl StmtVisitor for Interpreter {
             name: name.clone(),
             params: params.clone(),
             body: stmts.clone(),
-            closure: Rc::clone(&self.environment)
+            closure: Rc::clone(&self.environment),
         };
         Environment::define(
             &self.environment,
@@ -320,6 +334,7 @@ impl Interpreter {
         );
         let environment = Rc::clone(&globals);
         Interpreter {
+            locals: HashMap::new(),
             globals,
             environment,
         }
@@ -388,5 +403,9 @@ impl Interpreter {
 
         self.environment = previous;
         result
+    }
+
+    pub fn resolve(&mut self, id: usize, depth: usize) {
+        self.locals.insert(id, depth);
     }
 }

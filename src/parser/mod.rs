@@ -1,6 +1,6 @@
 mod statements;
 use crate::{
-    expr::Expression,
+    expr::{Expression, next_id},
     stmt::Statement,
     token::{BinaryOp, LogicalOp, Token, TokenLiteral, TokenType, UnaryOp},
 };
@@ -103,7 +103,8 @@ impl Parser {
                 let name = name.clone();
                 let line = self.peek().line;
                 self.advance();
-                Ok(Expression::Variable(name, line))
+                let id = next_id();
+                Ok(Expression::Variable(name, line, id))
             }
             _ => {
                 let error = ParseError::new(
@@ -262,9 +263,10 @@ impl Parser {
         if self.check(&TokenType::Equal) {
             self.advance();
             match expr {
-                Expression::Variable(name, line) => {
+                Expression::Variable(name, line, _id) => {
+                    let assign_id = next_id();
                     let value = self.assigment()?;
-                    return Ok(Expression::Assign(name, line, Box::new(value)));
+                    return Ok(Expression::Assign(name, line, Box::new(value), assign_id));
                 }
                 _ => {
                     let error = ParseError::new(
