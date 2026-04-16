@@ -43,8 +43,12 @@ impl Parser {
         self.advance();
         let initializer: Option<Expression>;
         let name: String;
+        let mut line;
         match &self.peek().token_type {
-            TokenType::Identifier(identifier) => name = identifier.clone(),
+            TokenType::Identifier(identifier) => {
+                line = self.peek().line;
+                name = identifier.clone()
+            }
             _ => {
                 return Err(self.error(format!(
                     "Esperava nome de variável após 'var', mas encontrei '{}'.",
@@ -64,7 +68,7 @@ impl Parser {
 
         if self.check(&TokenType::Semicolon) {
             self.advance();
-            Ok(Statement::Var(name, initializer))
+            Ok(Statement::Var(name, initializer, line))
         } else {
             Err(self.error(format!(
                 "Esperava ';' após declaração de variável, mas encontrei '{}'.",
@@ -293,8 +297,12 @@ impl Parser {
     pub fn function_statement(&mut self) -> Option<Statement> {
         self.advance();
         let name: String;
+        let mut line: u64;
         match &self.peek().token_type {
-            TokenType::Identifier(identifier) => name = identifier.clone(),
+            TokenType::Identifier(identifier) => {
+                line = self.peek().line;
+                name = identifier.clone()
+            }
             _ => {
                 self.error(format!(
                     "Esperava um nome, mas encontrei '{}'.",
@@ -335,7 +343,7 @@ impl Parser {
                 self.advance();
                 match self.block_statement() {
                     Some(Statement::Block(stmts)) => {
-                        return Some(Statement::Function(name, params, stmts));
+                        return Some(Statement::Function(name, params, stmts, line));
                     }
                     _ => return None,
                 }
@@ -351,7 +359,7 @@ impl Parser {
     }
 
     fn return_statement(&mut self) -> Option<Statement> {
-        let line = self.peek().line; 
+        let line = self.peek().line;
         self.advance();
         if self.check(&TokenType::Semicolon) {
             self.advance();

@@ -2,14 +2,14 @@ mod ast_printer;
 mod expr;
 mod interpreter;
 mod parser;
+mod resolver;
 mod scanner;
 mod stmt;
 mod token;
-mod resolver;
 
 use scanner::Scanner;
 
-use crate::{interpreter::Interpreter, parser::Parser};
+use crate::{interpreter::Interpreter, parser::Parser, resolver::Resolver, stmt::Statement};
 
 fn main() {
     let programa = "
@@ -35,7 +35,12 @@ fn main() {
         }
         return;
     }
-
-    let mut interpreter = Interpreter::new();
+    let interpreter = Interpreter::new();
+    let mut resolver = Resolver::new(interpreter);
+    if let Err(e) = resolver.resolve(&statements) {
+        println!("Erro na linha {}: {}", e.line, e.message);
+        return;
+    }
+    let mut interpreter = resolver.into_interpreter();
     interpreter.interpret(statements);
 }

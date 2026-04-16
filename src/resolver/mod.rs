@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{expr::{ExprVisitor, Expression}, interpreter::{self, Interpreter}, stmt::{self, StmtVisitor}, token::Token};
+use crate::{
+    expr::{ExprVisitor, Expression},
+    interpreter::Interpreter,
+    stmt::{self, Statement, StmtVisitor},
+    token::Token,
+};
 
 pub struct ResolveError {
     pub line: u64,
@@ -8,11 +13,8 @@ pub struct ResolveError {
 }
 
 impl ResolveError {
-    pub fn new(line: u64, message: String) -> ResolveError{
-        ResolveError{
-            line,
-            message
-        }
+    pub fn new(line: u64, message: String) -> ResolveError {
+        ResolveError { line, message }
     }
 }
 pub struct Resolver {
@@ -44,10 +46,17 @@ impl Resolver {
         self.scopes.pop();
     }
 
-    pub fn declare(&mut self, name: String) {
+    pub fn declare(&mut self, name: String, line: u64) -> Result<(), ResolveError> {
         if let Some(scope) = self.scopes.last_mut() {
+            if scope.contains_key(&name) {
+                return Err(ResolveError::new(
+                    line,
+                    "Já existe uma variável com esse nome neste escopo".to_string(),
+                ));
+            }
             scope.insert(name, false);
         }
+        Ok(())
     }
 
     pub fn define(&mut self, name: String) {
@@ -64,16 +73,27 @@ impl Resolver {
             }
         }
     }
+
+    pub fn into_interpreter(self) -> Interpreter {
+        self.interpreter
+    }
+
+    pub fn resolve(&mut self, statements: &Vec<Statement>) -> Result<(), ResolveError>{
+        for stmt in statements {
+            stmt.accept(self)?;
+        }
+        Ok(())
+    }
 }
 
 impl ExprVisitor for Resolver {
-type Output = Result<(), ResolveError>;
+    type Output = Result<(), ResolveError>;
 
     fn visit_binary(
         &mut self,
         left: &Expression,
-        operator: &crate::token::BinaryOp,
-        line: &u64,
+        _operator: &crate::token::BinaryOp,
+        _line: &u64,
         right: &Expression,
     ) -> Self::Output {
         left.accept(self)?;
@@ -81,11 +101,16 @@ type Output = Result<(), ResolveError>;
         Ok(())
     }
 
-    fn visit_literal(&mut self, literal: &crate::token::TokenLiteral) -> Self::Output {
+    fn visit_literal(&mut self, _literal: &crate::token::TokenLiteral) -> Self::Output {
         Ok(())
     }
 
-    fn visit_unary(&mut self, unary_op: &crate::token::UnaryOp, line: &u64, expr: &Expression) -> Self::Output {
+    fn visit_unary(
+        &mut self,
+        _unary_op: &crate::token::UnaryOp,
+        _line: &u64,
+        expr: &Expression,
+    ) -> Self::Output {
         expr.accept(self)?;
         Ok(())
     }
@@ -96,14 +121,23 @@ type Output = Result<(), ResolveError>;
     }
 
     fn visit_variable(&mut self, name: &String, line: u64, id: usize) -> Self::Output {
-        if !self.scopes.is_empty() && self.scopes.last().unwrap().get(name) == Some(&false){
-            return Err(ResolveError::new(line, "Não é possivel usar uma variavel que não foi declarada".to_string()))
+        if !self.scopes.is_empty() && self.scopes.last().unwrap().get(name) == Some(&false) {
+            return Err(ResolveError::new(
+                line,
+                "Não é possivel usar uma variavel que não foi declarada".to_string(),
+            ));
         }
         self.resolve_local(id, name);
         Ok(())
     }
 
-    fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression, id: usize) -> Self::Output {
+    fn visit_assign(
+        &mut self,
+        name: &String,
+        _line: u64,
+        expr: &Expression,
+        id: usize,
+    ) -> Self::Output {
         expr.accept(self)?;
         self.resolve_local(id, name);
         Ok(())
@@ -112,8 +146,8 @@ type Output = Result<(), ResolveError>;
     fn visit_logical(
         &mut self,
         left: &Expression,
-        operator: &crate::token::LogicalOp,
-        line: &u64,
+        _operator: &crate::token::LogicalOp,
+        _line: &u64,
         right: &Expression,
     ) -> Self::Output {
         left.accept(self)?;
@@ -121,7 +155,12 @@ type Output = Result<(), ResolveError>;
         Ok(())
     }
 
-    fn visit_call(&mut self, callee: &Expression, args: &Vec<Expression>,paren: &Token) -> Self::Output {
+    fn visit_call(
+        &mut self,
+        callee: &Expression,
+        args: &Vec<Expression>,
+        _paren: &Token,
+    ) -> Self::Output {
         callee.accept(self)?;
         for arg in args {
             arg.accept(self)?;
@@ -142,19 +181,19 @@ impl StmtVisitor for Resolver {
         Ok(())
     }
 
-    fn visit_var(&mut self, name: &String, expr: Option<&Expression>) -> Self::Output {
-       self.declare(name.clone());
-       if let Some(e) = expr {
-        e.accept(self)?;
-       };
-       self.define(name.clone());
-       Ok(())
+    fn visit_var(&mut self, name: &String, expr: Option<&Expression>, line: u64) -> Self::Output {
+        self.declare(name.clone(), line)?;
+        if let Some(e) = expr {
+            e.accept(self)?;
+        };
+        self.define(name.clone());
+        Ok(())
     }
 
     fn visit_block(&mut self, statements: &Vec<crate::stmt::Statement>) -> Self::Output {
         self.begin_scope();
         for stmt in statements {
-          stmt.accept(self)?;
+            stmt.accept(self)?;
         }
         self.end_scope();
         Ok(())
@@ -185,14 +224,15 @@ impl StmtVisitor for Resolver {
         name: &String,
         params: &Vec<String>,
         stmts: &Vec<crate::stmt::Statement>,
+        line: u64,
     ) -> Self::Output {
-        self.declare(name.clone());
+        self.declare(name.clone(), line)?;
         self.define(name.clone());
         self.begin_scope();
         let is_fun = self.is_function;
         self.is_function = IsFunction::Function;
         for param in params {
-            self.declare(param.clone());
+            self.declare(param.clone(), line)?;
             self.define(param.clone());
         }
         for stmt in stmts {
@@ -204,13 +244,15 @@ impl StmtVisitor for Resolver {
     }
 
     fn visit_return(&mut self, line: u64, value: Option<&Expression>) -> Self::Output {
-        if matches!(self.is_function, IsFunction::None){
-            return Err(ResolveError::new(line, "Return só pode ser usado em funções".to_string()))
+        if matches!(self.is_function, IsFunction::None) {
+            return Err(ResolveError::new(
+                line,
+                "Return só pode ser usado em funções".to_string(),
+            ));
         }
-        if let Some(v) = value{
+        if let Some(v) = value {
             v.accept(self)?;
-        } 
+        }
         Ok(())
     }
 }
-

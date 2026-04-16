@@ -241,7 +241,7 @@ impl StmtVisitor for Interpreter {
         Ok(())
     }
 
-    fn visit_var(&mut self, name: &String, expr: Option<&Expression>) -> Self::Output {
+    fn visit_var(&mut self, name: &String, expr: Option<&Expression>, _line: u64) -> Self::Output {
         let value = match expr {
             Some(e) => self.evaluate(e)?,
             None => SeleneValue::Null,
@@ -298,6 +298,7 @@ impl StmtVisitor for Interpreter {
         name: &String,
         params: &Vec<String>,
         stmts: &Vec<Statement>,
+        _line: u64
     ) -> Self::Output {
         let func = SeleneFunction {
             name: name.clone(),
