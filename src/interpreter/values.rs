@@ -1,5 +1,8 @@
 use std::{
-    cell::RefCell, rc::Rc, time::{SystemTime, UNIX_EPOCH}
+    cell::RefCell,
+    collections::HashMap,
+    rc::Rc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -14,6 +17,19 @@ pub enum SeleneValue {
     String(String),
     Null,
     Function(Rc<dyn SeleneCallable>),
+    Class(Rc<SeleneClass>),
+    Instance(Rc<RefCell<SeleneInstance>>),
+}
+#[derive(Debug, Clone)]
+pub struct SeleneClass {
+    pub name: String,
+    pub functions: HashMap<String, SeleneFunction>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SeleneInstance {
+    pub class: Rc<SeleneClass>,
+    pub fields: HashMap<String, SeleneValue>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +38,7 @@ pub struct SeleneFunction {
     pub params: Vec<String>,
     pub body: Vec<Statement>,
     pub closure: Rc<RefCell<Environment>>,
+    pub is_initializer: bool,
 }
 
 impl SeleneValue {
@@ -38,6 +55,10 @@ impl SeleneValue {
             SeleneValue::String(s) => s.clone(),
             SeleneValue::Null => "null".to_string(),
             SeleneValue::Function(f) => format!("<fn {}>", f.name()),
+            SeleneValue::Class(selene_class) => format!("{}", selene_class.name),
+            SeleneValue::Instance(selene_instance) => {
+                format!("{} instance", selene_instance.borrow().class.name)
+            }
         }
     }
 }
@@ -50,6 +71,8 @@ impl PartialEq for SeleneValue {
             (SeleneValue::String(a), SeleneValue::String(b)) => a == b,
             (SeleneValue::Null, SeleneValue::Null) => true,
             (SeleneValue::Function(_), SeleneValue::Function(_)) => false,
+            (SeleneValue::Class(a), SeleneValue::Class(b)) => a.name == b.name,
+            (SeleneValue::Instance(_), SeleneValue::Instance(_)) => false,
             _ => false,
         }
     }
@@ -85,7 +108,13 @@ impl SeleneCallable for SeleneFunction {
             Environment::define(&child, param.clone(), arg.clone());
         }
         match interpreter.execute_block(child, &self.body) {
-            Ok(_) => Ok(SeleneValue::Null),
+            Ok(_) => {
+                if self.is_initializer {
+                    Environment::get(&self.closure, "this", 0)
+                } else {
+                    Ok(SeleneValue::Null)
+                }
+            }
             Err(RuntimeError::Return(value)) => Ok(value),
             Err(e) => Err(e),
         }

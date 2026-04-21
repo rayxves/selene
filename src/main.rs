@@ -9,19 +9,31 @@ mod token;
 
 use scanner::Scanner;
 
-use crate::{interpreter::Interpreter, parser::Parser, resolver::Resolver, stmt::Statement};
+use crate::{interpreter::Interpreter, parser::Parser, resolver::Resolver};
 
 fn main() {
     let programa = "
-   var a = \"global\";
-{
-    function showA() {
-        print a;
+ class Pessoa {
+    init(nome, idade) {
+        this.nome = nome;
+        this.idade = idade;
     }
-    showA();
-    var a = \"block\";
-    showA();
+
+    apresentar() {
+        print this.nome + \" tem \" + this.idade + \" anos.\";
+    }
+
+    cumprimentar(outro) {
+        print this.nome + \" cumprimenta \" + outro.nome + \".\";
+    }
 }
+
+var joao = Pessoa(\"João\", 30);
+var maria = Pessoa(\"Maria\", 25);
+
+joao.apresentar();
+maria.apresentar();
+joao.cumprimentar(maria);
 ";
 
     let mut scanner = Scanner::new(programa.to_string());

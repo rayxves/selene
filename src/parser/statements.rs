@@ -43,7 +43,7 @@ impl Parser {
         self.advance();
         let initializer: Option<Expression>;
         let name: String;
-        let mut line;
+        let line;
         match &self.peek().token_type {
             TokenType::Identifier(identifier) => {
                 line = self.peek().line;
@@ -99,6 +99,7 @@ impl Parser {
             TokenType::For => self.for_statement(),
             TokenType::Function => self.function_statement(),
             TokenType::Return => self.return_statement(),
+            TokenType::Class => self.class_statement(),
             _ => match self.expr_statement() {
                 Ok(stmt) => Some(stmt),
                 Err(_) => {
@@ -297,7 +298,7 @@ impl Parser {
     pub fn function_statement(&mut self) -> Option<Statement> {
         self.advance();
         let name: String;
-        let mut line: u64;
+        let line: u64;
         match &self.peek().token_type {
             TokenType::Identifier(identifier) => {
                 line = self.peek().line;
@@ -386,6 +387,107 @@ impl Parser {
                     ));
                     return None;
                 }
+            }
+        }
+    }
+
+    pub fn parse_function_statement(&mut self, name: String) -> Option<Statement> {
+        let line = self.peek().line;
+        let mut params = Vec::new();
+        match self.peek().token_type {
+            TokenType::LeftParen => {
+                self.advance();
+                while !self.check(&TokenType::RightParen) {
+                    match &self.peek().token_type {
+                        TokenType::Identifier(name) => {
+                            params.push(name.clone());
+                            self.advance();
+                            if self.check(&TokenType::Comma) {
+                                self.advance();
+                            } else if !self.check(&TokenType::RightParen) {
+                                self.error(format!(
+                                    "Esperava ',' ou ')' após parâmetro, mas encontrei '{}'.",
+                                    self.peek().lexeme
+                                ));
+                                return None;
+                            }
+                        }
+                        _ => {
+                            self.error(format!(
+                                "Esperava um nome de parâmetro, mas encontrei '{}'.",
+                                self.peek().lexeme
+                            ));
+                            return None;
+                        }
+                    }
+                }
+                self.advance();
+                match self.block_statement() {
+                    Some(Statement::Block(stmts)) => {
+                        return Some(Statement::Function(name, params, stmts, line));
+                    }
+                    _ => return None,
+                }
+            }
+            _ => {
+                self.error(format!(
+                    "Esperava '(' após nome da função, mas encontrei '{}'.",
+                    self.peek().lexeme
+                ));
+                return None;
+            }
+        }
+    }
+
+    fn class_statement(&mut self) -> Option<Statement> {
+        let line = self.peek().line;
+        let name;
+        let mut methods = Vec::new();
+        self.advance();
+        match &self.peek().token_type {
+            TokenType::Identifier(n) => {
+                name = n.clone();
+                self.advance();
+                match self.peek().token_type {
+                    TokenType::LeftBrace => {
+                        self.advance();
+                        while !self.check(&TokenType::RightBrace) {
+                            match &self.peek().token_type {
+                                TokenType::Identifier(n) => {
+                                    let fun_name = n.clone();
+                                    self.advance();
+                                    match self.parse_function_statement(fun_name) {
+                                        Some(f) => methods.push(f),
+                                        None => {}
+                                    }
+                                }
+                                _ => {
+                                    self.error(format!(
+                                        "Esperava nome de um método, mas encontrei '{}'.",
+                                        self.peek().lexeme
+                                    ));
+                                    return None;
+                                }
+                            }
+                        }
+                        self.advance();
+                        return Some(Statement::Class(name, line, methods));
+                    }
+                    _ => {
+                        self.error(format!(
+                            "Esperava {{, mas encontrei '{}'.",
+                            self.peek().lexeme
+                        ));
+                        return None;
+                    }
+                }
+            }
+            _ => {
+                self.error(format!(
+                    "Esperava um nome de classe válido, mas encontrei '{}'.",
+                    self.peek().lexeme
+                ));
+                return None;
             }
         }
     }

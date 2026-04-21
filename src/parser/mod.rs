@@ -106,6 +106,12 @@ impl Parser {
                 let id = next_id();
                 Ok(Expression::Variable(name, line, id))
             }
+            TokenType::This => {
+                let token = self.peek().clone();
+                self.advance();
+                let id = next_id();
+                Ok(Expression::This(token, id))
+            }
             _ => {
                 let error = ParseError::new(
                     self.peek().clone(),
@@ -123,32 +129,49 @@ impl Parser {
 
     pub fn call(&mut self) -> Result<Expression, ParseError> {
         let mut callee = self.primary()?;
-        while self.check(&TokenType::LeftParen) {
-            let mut args = Vec::new();
-            self.advance();
-            while !self.check(&TokenType::RightParen) {
-                if args.len() > 255 {
-                    self.error("Não é possível ter mais de 255 argumentos.".to_string());
-                }
-                args.push(self.expression()?);
-                if !self.check(&TokenType::Comma) {
-                    break;
-                }
+        while self.check(&TokenType::LeftParen) || self.check(&TokenType::Dot) {
+            if self.check(&TokenType::LeftParen) {
+                let mut args = Vec::new();
                 self.advance();
+                while !self.check(&TokenType::RightParen) {
+                    if args.len() > 255 {
+                        self.error("Não é possível ter mais de 255 argumentos.".to_string());
+                    }
+                    args.push(self.expression()?);
+                    if !self.check(&TokenType::Comma) {
+                        break;
+                    }
+                    self.advance();
+                }
+                if !self.check(&TokenType::RightParen) {
+                    return Err(self.error(format!(
+                        "Esperava ')' após argumentos, mas encontrei '{}'.",
+                        self.peek().lexeme
+                    )));
+                }
+                let paren = self.peek().clone();
+                self.advance();
+                callee = Expression::Call(Box::new(callee), args, paren);
+            } else if self.check(&TokenType::Dot) {
+                self.advance();
+                match &self.peek().token_type {
+                    TokenType::Identifier(_t) => {
+                        callee = Expression::Get(Box::new(callee), self.peek().clone());
+                        self.advance();
+                    }
+                    _ => {
+                        return Err(self.error(format!(
+                            "Esperava nome de propriedade após '.', mas encontrei '{}'.",
+                            self.peek().lexeme
+                        )));
+                    }
+                }
+            } else {
+                break;
             }
-            if !self.check(&TokenType::RightParen) {
-                return Err(self.error(format!(
-                    "Esperava ')' após argumentos, mas encontrei '{}'.",
-                    self.peek().lexeme
-                )));
-            }
-            let paren = self.peek().clone();
-            self.advance();
-            callee = Expression::Call(Box::new(callee), args, paren);
         }
         Ok(callee)
     }
-
     pub fn unary(&mut self) -> Result<Expression, ParseError> {
         let line = self.peek().line;
         match &self.peek().token_type {
@@ -267,6 +290,10 @@ impl Parser {
                     let assign_id = next_id();
                     let value = self.assigment()?;
                     return Ok(Expression::Assign(name, line, Box::new(value), assign_id));
+                }
+                Expression::Get(expr, token) => {
+                    let value = self.assigment()?;
+                    return Ok(Expression::Set(expr, token, Box::new(value)));
                 }
                 _ => {
                     let error = ParseError::new(

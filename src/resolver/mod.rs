@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     expr::{ExprVisitor, Expression},
     interpreter::Interpreter,
-    stmt::{self, Statement, StmtVisitor},
+    stmt::{ Statement, StmtVisitor},
     token::Token,
 };
 
@@ -21,11 +21,19 @@ pub struct Resolver {
     interpreter: Interpreter,
     scopes: Vec<HashMap<String, bool>>,
     is_function: IsFunction,
+    is_class: IsClass,
 }
 
 #[derive(Clone, Copy)]
 pub enum IsFunction {
     Function,
+    Initializer,
+    None,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum IsClass {
+    Class,
     None,
 }
 
@@ -35,6 +43,7 @@ impl Resolver {
             interpreter,
             scopes: Vec::new(),
             is_function: IsFunction::None,
+            is_class: IsClass::None,
         }
     }
 
@@ -78,7 +87,7 @@ impl Resolver {
         self.interpreter
     }
 
-    pub fn resolve(&mut self, statements: &Vec<Statement>) -> Result<(), ResolveError>{
+    pub fn resolve(&mut self, statements: &Vec<Statement>) -> Result<(), ResolveError> {
         for stmt in statements {
             stmt.accept(self)?;
         }
@@ -167,6 +176,29 @@ impl ExprVisitor for Resolver {
         }
         Ok(())
     }
+
+    fn visit_get(&mut self, expr: &Expression, _token: &Token) -> Self::Output {
+        expr.accept(self)?;
+        Ok(())
+    }
+
+    fn visit_set(&mut self, expr: &Expression, _token: &Token, value: &Expression) -> Self::Output {
+        expr.accept(self)?;
+        value.accept(self)?;
+        Ok(())
+    }
+
+    fn visit_this(&mut self, token: &Token, id: usize) -> Self::Output {
+        if self.is_class == IsClass::Class {
+            self.resolve_local(id, "this");
+            Ok(())
+        } else {
+            return Err(ResolveError::new(
+                token.line,
+                "Não é possivel usar this sem uma classe".to_string(),
+            ));
+        }
+    }
 }
 impl StmtVisitor for Resolver {
     type Output = Result<(), ResolveError>;
@@ -249,10 +281,57 @@ impl StmtVisitor for Resolver {
                 line,
                 "Return só pode ser usado em funções".to_string(),
             ));
+        } else if matches!(self.is_function, IsFunction::Initializer) && value.is_some(){
+            return Err(ResolveError::new(
+                line,
+                "Não é possível retornar um valor de init".to_string(),
+            ));
         }
         if let Some(v) = value {
             v.accept(self)?;
         }
+        Ok(())
+    }
+
+    fn visit_class(
+        &mut self,
+        name: &String,
+        line: u64,
+        statements: &Vec<Statement>,
+    ) -> Self::Output {
+        let current_is_class = self.is_class;
+        self.is_class = IsClass::Class;
+        self.declare(name.clone(), line)?;
+        self.define(name.clone());
+        self.begin_scope();
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert("this".to_string(), true);
+        }
+
+        for stmt in statements {
+            match stmt {
+                Statement::Function(n, params, body, _line) => {
+                    let prev_fn = self.is_function;
+                    if n == "init" {
+                        self.is_function = IsFunction::Initializer;
+                    } else {
+                        self.is_function = IsFunction::Function;
+                    }
+                    self.begin_scope();
+                    for param in params {
+                        self.declare(param.clone(), line)?;
+                        self.define(param.clone());
+                    }
+                    self.resolve(body)?;
+                    self.end_scope();
+                    self.is_function = prev_fn;
+                }
+                _ => {}
+            }
+        }
+
+        self.end_scope();
+        self.is_class = current_is_class;
         Ok(())
     }
 }

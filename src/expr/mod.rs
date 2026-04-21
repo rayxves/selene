@@ -19,7 +19,13 @@ pub trait ExprVisitor {
     fn visit_unary(&mut self, unary_op: &UnaryOp, line: &u64, expr: &Expression) -> Self::Output;
     fn visit_grouping(&mut self, expr: &Expression) -> Self::Output;
     fn visit_variable(&mut self, name: &String, line: u64, id: usize) -> Self::Output;
-    fn visit_assign(&mut self, name: &String, line: u64, expr: &Expression, id: usize) -> Self::Output;
+    fn visit_assign(
+        &mut self,
+        name: &String,
+        line: u64,
+        expr: &Expression,
+        id: usize,
+    ) -> Self::Output;
     fn visit_logical(
         &mut self,
         left: &Expression,
@@ -27,7 +33,15 @@ pub trait ExprVisitor {
         line: &u64,
         right: &Expression,
     ) -> Self::Output;
-    fn visit_call(&mut self, callee: &Expression, args: &Vec<Expression>,paren: &Token) -> Self::Output;
+    fn visit_call(
+        &mut self,
+        callee: &Expression,
+        args: &Vec<Expression>,
+        paren: &Token,
+    ) -> Self::Output;
+    fn visit_get(&mut self, expr: &Expression, token: &Token) -> Self::Output;
+    fn visit_set(&mut self, expr: &Expression, token: &Token, value: &Expression) -> Self::Output;
+    fn visit_this(&mut self, token: &Token, id: usize) -> Self::Output;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -39,7 +53,10 @@ pub enum Expression {
     Variable(String, u64, usize),
     Assign(String, u64, Box<Expression>, usize),
     Logical(Box<Expression>, LogicalOp, u64, Box<Expression>),
-    Call(Box<Expression>, Vec<Expression>, Token)
+    Call(Box<Expression>, Vec<Expression>, Token),
+    Get(Box<Expression>, Token),
+    Set(Box<Expression>, Token, Box<Expression>),
+    This(Token, usize),
 }
 
 impl Expression {
@@ -52,9 +69,16 @@ impl Expression {
             Expression::Grouping(expr) => visitor.visit_grouping(expr),
             Expression::Unary(unary_op, line, expr) => visitor.visit_unary(unary_op, line, expr),
             Expression::Variable(name, line, id) => visitor.visit_variable(name, *line, *id),
-            Expression::Assign(name, line, expr, id) => visitor.visit_assign(name, *line, expr, *id),
-            Expression::Logical(left, logical_op, line, right) => visitor.visit_logical(left, logical_op, line, right),
+            Expression::Assign(name, line, expr, id) => {
+                visitor.visit_assign(name, *line, expr, *id)
+            }
+            Expression::Logical(left, logical_op, line, right) => {
+                visitor.visit_logical(left, logical_op, line, right)
+            }
             Expression::Call(callee, args, paren) => visitor.visit_call(callee, args, paren),
+            Expression::Get(expr, token) => visitor.visit_get(expr, token),
+            Expression::Set(expr, token, value) => visitor.visit_set(expr, token, value),
+            Expression::This(token, id) => visitor.visit_this(token, *id),
         }
     }
 }

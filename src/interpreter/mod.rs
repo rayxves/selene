@@ -4,7 +4,7 @@ use crate::{
     expr::{ExprVisitor, Expression},
     interpreter::{
         environment::Environment,
-        values::{ClockFn, SeleneFunction},
+        values::{ClockFn, SeleneClass, SeleneFunction, SeleneInstance},
     },
     stmt::{Statement, StmtVisitor},
     token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
@@ -216,6 +216,50 @@ impl ExprVisitor for Interpreter {
                 }
                 func.call(self, evaluated_args)
             }
+            SeleneValue::Class(class) => {
+                let selene_instance = SeleneInstance {
+                    class: Rc::clone(&class),
+                    fields: HashMap::new(),
+                };
+
+                let instance_rc = Rc::new(RefCell::new(selene_instance));
+                let instance_value = SeleneValue::Instance(Rc::clone(&instance_rc));
+                let init_func = class.functions.get("init").cloned();
+
+                match init_func {
+                    Some(fun) => {
+                        let mut evaluated_args: Vec<SeleneValue> = Vec::new();
+                        for arg in args {
+                            evaluated_args.push(arg.accept(self)?);
+                        }
+                        if evaluated_args.len() != fun.arity() {
+                            return Err(RuntimeError::Error {
+                                line: paren.line,
+                                message: format!(
+                                    "Esperava {} argumento(s), mas recebeu {}.",
+                                    fun.arity(),
+                                    evaluated_args.len()
+                                ),
+                            });
+                        }
+                        let env: Rc<RefCell<Environment>> =
+                            Environment::new_enclosed(Rc::clone(&fun.closure));
+
+                        Environment::define(&env, "this".to_string(), instance_value.clone());
+                        let bound_func = SeleneFunction {
+                            name: fun.name.clone(),
+                            params: fun.params.clone(),
+                            body: fun.body.clone(),
+                            closure: env,
+                            is_initializer: true,
+                        };
+                        bound_func.call(self, evaluated_args)?;
+
+                        Ok(instance_value)
+                    }
+                    None => Ok(SeleneValue::Instance(instance_rc)),
+                }
+            }
             _ => Err(RuntimeError::Error {
                 line: paren.line,
                 message: format!(
@@ -223,6 +267,77 @@ impl ExprVisitor for Interpreter {
                     paren.lexeme
                 ),
             }),
+        }
+    }
+
+    fn visit_get(&mut self, expr: &Expression, token: &crate::token::Token) -> Self::Output {
+        let expr = expr.accept(self)?;
+        match expr {
+            SeleneValue::Instance(instance) => {
+                let borrowed = instance.borrow();
+                match borrowed.fields.get(&token.lexeme) {
+                    Some(i) => return Ok(i.clone()),
+                    None => match borrowed.class.functions.get(&token.lexeme) {
+                        Some(func) => {
+                            let env = Environment::new_enclosed(Rc::clone(&func.closure));
+                            Environment::define(
+                                &env,
+                                "this".to_string(),
+                                SeleneValue::Instance(Rc::clone(&instance)),
+                            );
+                            let new_func = SeleneFunction {
+                                name: func.name.clone(),
+                                params: func.params.clone(),
+                                body: func.body.clone(),
+                                closure: env,
+                                is_initializer: func.is_initializer,
+                            };
+                            return Ok(SeleneValue::Function(Rc::new(new_func)));
+                        }
+                        None => Err(RuntimeError::Error {
+                            line: token.line,
+                            message: format!(
+                                "Expressão '{}' não é uma função e não pode ser chamada.",
+                                token.lexeme
+                            ),
+                        }),
+                    },
+                }
+            }
+            _ => Err(RuntimeError::Error {
+                line: token.line,
+                message: format!("Expressão '{}' não é uma instancia válida: ", token.lexeme),
+            }),
+        }
+    }
+
+    fn visit_set(
+        &mut self,
+        expr: &Expression,
+        token: &crate::token::Token,
+        value: &Expression,
+    ) -> Self::Output {
+        let expr = expr.accept(self)?;
+        match expr {
+            SeleneValue::Instance(instance) => {
+                let value = value.accept(self)?;
+                instance
+                    .borrow_mut()
+                    .fields
+                    .insert(token.lexeme.clone(), value.clone());
+                Ok(value)
+            }
+            _ => Err(RuntimeError::Error {
+                line: token.line,
+                message: format!("Expressão '{}' não é uma instancia válida: ", token.lexeme),
+            }),
+        }
+    }
+
+    fn visit_this(&mut self, token: &crate::token::Token, id: usize) -> Self::Output {
+        match self.locals.get(&id) {
+            Some(d) => Environment::get_at(&self.environment, *d, token.lexeme.clone(), token.line),
+            None => Environment::get(&self.globals, &token.lexeme, token.line),
         }
     }
 }
@@ -298,13 +413,14 @@ impl StmtVisitor for Interpreter {
         name: &String,
         params: &Vec<String>,
         stmts: &Vec<Statement>,
-        _line: u64
+        _line: u64,
     ) -> Self::Output {
         let func = SeleneFunction {
             name: name.clone(),
             params: params.clone(),
             body: stmts.clone(),
             closure: Rc::clone(&self.environment),
+            is_initializer: false,
         };
         Environment::define(
             &self.environment,
@@ -322,6 +438,43 @@ impl StmtVisitor for Interpreter {
             },
             None => Err(RuntimeError::Return(SeleneValue::Null)),
         }
+    }
+
+    fn visit_class(
+        &mut self,
+        name: &String,
+        _line: u64,
+        statements: &Vec<Statement>,
+    ) -> Self::Output {
+        let mut functions = HashMap::new();
+        Environment::define(&self.environment, name.clone(), SeleneValue::Null);
+        for stmt in statements {
+            match stmt {
+                Statement::Function(n, params, statements, _line) => {
+                    let is_initializer = n == "init";
+                    let selene_function = SeleneFunction {
+                        name: n.clone(),
+                        params: params.clone(),
+                        body: statements.clone(),
+                        closure: Rc::clone(&self.environment),
+                        is_initializer: is_initializer,
+                    };
+                    functions.insert(n.clone(), selene_function);
+                }
+                _ => {}
+            }
+        }
+        let selene_class = SeleneClass {
+            name: name.clone(),
+            functions: functions,
+        };
+
+        Environment::define(
+            &self.environment,
+            name.clone(),
+            SeleneValue::Class(Rc::new(selene_class)),
+        );
+        Ok(())
     }
 }
 
