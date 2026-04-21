@@ -4,7 +4,7 @@ use crate::{
     expr::{ExprVisitor, Expression},
     interpreter::{
         environment::Environment,
-        values::{ClockFn, SeleneClass, SeleneFunction, SeleneInstance},
+        values::{ClockFn, SeleneClass, SeleneFunction, SeleneInstance, StrFn},
     },
     stmt::{Statement, StmtVisitor},
     token::{BinaryOp, LogicalOp, TokenLiteral, UnaryOp},
@@ -485,6 +485,12 @@ impl Interpreter {
             &globals,
             "clock".to_string(),
             SeleneValue::Function(Rc::new(ClockFn)),
+        );
+
+        Environment::define(
+            &globals,
+            "to_string".to_string(),
+            SeleneValue::Function(Rc::new(StrFn)),
         );
         let environment = Rc::clone(&globals);
         Interpreter {

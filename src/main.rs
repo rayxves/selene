@@ -20,7 +20,7 @@ fn main() {
     }
 
     apresentar() {
-        print this.nome + \" tem \" + this.idade + \" anos.\";
+        print this.nome + \" tem \" + to_string(this.idade) + \" anos.\";
     }
 
     cumprimentar(outro) {

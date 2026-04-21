@@ -87,6 +87,9 @@ pub enum RuntimeError {
 #[derive(Debug)]
 pub struct ClockFn;
 
+#[derive(Debug)]
+pub struct StrFn;
+
 impl PartialEq for SeleneFunction {
     fn eq(&self, _other: &Self) -> bool {
         false
@@ -144,5 +147,23 @@ impl SeleneCallable for ClockFn {
 
     fn name(&self) -> String {
         "clock".to_string()
+    }
+}
+
+impl SeleneCallable for StrFn {
+    fn arity(&self) -> usize {
+        1
+    }
+
+    fn call(
+        &self,
+        _interpreter: &mut super::Interpreter,
+        args: Vec<SeleneValue>,
+    ) -> Result<SeleneValue, RuntimeError> {
+        Ok(SeleneValue::String(args[0].to_display()))
+    }
+
+    fn name(&self) -> String {
+        "to_string".to_string()
     }
 }
