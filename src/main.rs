@@ -13,29 +13,25 @@ use crate::{interpreter::Interpreter, parser::Parser, resolver::Resolver};
 
 fn main() {
     let programa = "
- class Pessoa {
-    init(nome, idade) {
-        this.nome = nome;
-        this.idade = idade;
+    class A {
+        metodo() {
+            print \"Método A\";
+        }
     }
 
-    apresentar() {
-        print this.nome + \" tem \" + to_string(this.idade) + \" anos.\";
+    class B < A {
+        metodo() {
+            print \"Método B\";
+        }
+        teste() {
+            super.metodo();
+        }
     }
 
-    cumprimentar(outro) {
-        print this.nome + \" cumprimenta \" + outro.nome + \".\";
-    }
-}
+    class C < B {}
 
-var joao = Pessoa(\"João\", 30);
-var maria = Pessoa(\"Maria\", 25);
-
-joao.apresentar();
-maria.apresentar();
-joao.cumprimentar(maria);
+    C().teste();
 ";
-
     let mut scanner = Scanner::new(programa.to_string());
     let tokens = scanner.scan_tokens();
 

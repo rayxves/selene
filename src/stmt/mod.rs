@@ -25,6 +25,7 @@ pub trait StmtVisitor {
         &mut self,
         name: &String,
         line: u64,
+        superclass: &Option<Expression>,
         statements: &Vec<Statement>,
     ) -> Self::Output;
 }
@@ -39,7 +40,7 @@ pub enum Statement {
     While(Expression, Box<Statement>),
     Function(String, Vec<String>, Vec<Statement>, u64),
     Return(u64, Option<Expression>),
-    Class(String, u64, Vec<Statement>),
+    Class(String, u64, Option<Expression>, Vec<Statement>),
 }
 
 impl Statement {
@@ -57,8 +58,8 @@ impl Statement {
                 visitor.visit_function(name, params, stmts, *line)
             }
             Statement::Return(line, value) => visitor.visit_return(*line, value.as_ref()),
-            Statement::Class(name, line, statements) => {
-                visitor.visit_class(name, *line, statements)
+            Statement::Class(name, line, superclass, statements) => {
+                visitor.visit_class(name, *line, superclass, statements)
             }
         }
     }

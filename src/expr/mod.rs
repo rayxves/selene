@@ -1,4 +1,4 @@
-use crate::token::{BinaryOp, LogicalOp, Token, TokenLiteral, UnaryOp};
+use crate::token::{ BinaryOp, LogicalOp, Token, TokenLiteral, UnaryOp};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -42,6 +42,7 @@ pub trait ExprVisitor {
     fn visit_get(&mut self, expr: &Expression, token: &Token) -> Self::Output;
     fn visit_set(&mut self, expr: &Expression, token: &Token, value: &Expression) -> Self::Output;
     fn visit_this(&mut self, token: &Token, id: usize) -> Self::Output;
+    fn visit_super(&mut self, key_super: &Token, method: &Token, id: usize) -> Self::Output;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -57,6 +58,7 @@ pub enum Expression {
     Get(Box<Expression>, Token),
     Set(Box<Expression>, Token, Box<Expression>),
     This(Token, usize),
+    Super(Token, Token, usize)
 }
 
 impl Expression {
@@ -79,6 +81,7 @@ impl Expression {
             Expression::Get(expr, token) => visitor.visit_get(expr, token),
             Expression::Set(expr, token, value) => visitor.visit_set(expr, token, value),
             Expression::This(token, id) => visitor.visit_this(token, *id),
+            Expression::Super(key_super, method, id) => visitor.visit_super(key_super, method, *id),
         }
     }
 }

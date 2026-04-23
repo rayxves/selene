@@ -24,6 +24,7 @@ pub enum SeleneValue {
 pub struct SeleneClass {
     pub name: String,
     pub functions: HashMap<String, SeleneFunction>,
+    pub superclass: Option<Rc<SeleneClass>>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,6 +76,18 @@ impl PartialEq for SeleneValue {
             (SeleneValue::Instance(_), SeleneValue::Instance(_)) => false,
             _ => false,
         }
+    }
+}
+
+impl SeleneClass {
+    pub fn find_method(&self, name: &str) -> Option<SeleneFunction> {
+        if let Some(f) = self.functions.get(name) {
+            return Some(f.clone());
+        }
+        if let Some(super_class) = &self.superclass {
+            return super_class.find_method(name);
+        }
+        None
     }
 }
 

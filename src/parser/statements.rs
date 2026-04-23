@@ -1,5 +1,5 @@
 use crate::{
-    expr::Expression,
+    expr::{Expression, next_id},
     parser::{ParseError, Parser},
     stmt::Statement,
     token::TokenType,
@@ -439,39 +439,76 @@ impl Parser {
         }
     }
 
+    fn parse_class_body(&mut self) -> Option<Vec<Statement>> {
+        if !self.check(&TokenType::LeftBrace) {
+            self.error(format!(
+                "Esperava {{, mas encontrei '{}'.",
+                self.peek().lexeme
+            ));
+            return None;
+        }
+        self.advance();
+        let mut methods = Vec::new();
+        while !self.check(&TokenType::RightBrace) {
+            match &self.peek().token_type {
+                TokenType::Identifier(n) => {
+                    let fun_name = n.clone();
+                    self.advance();
+                    match self.parse_function_statement(fun_name) {
+                        Some(f) => methods.push(f),
+                        None => return None,
+                    }
+                }
+                _ => {
+                    self.error(format!(
+                        "Esperava nome de um método, mas encontrei '{}'.",
+                        self.peek().lexeme
+                    ));
+                    return None;
+                }
+            }
+        }
+        self.advance();
+        Some(methods)
+    }
+
     fn class_statement(&mut self) -> Option<Statement> {
         let line = self.peek().line;
         let name;
-        let mut methods = Vec::new();
         self.advance();
         match &self.peek().token_type {
             TokenType::Identifier(n) => {
                 name = n.clone();
                 self.advance();
                 match self.peek().token_type {
-                    TokenType::LeftBrace => {
+                    TokenType::Less => {
                         self.advance();
-                        while !self.check(&TokenType::RightBrace) {
-                            match &self.peek().token_type {
-                                TokenType::Identifier(n) => {
-                                    let fun_name = n.clone();
-                                    self.advance();
-                                    match self.parse_function_statement(fun_name) {
-                                        Some(f) => methods.push(f),
-                                        None => {}
-                                    }
-                                }
-                                _ => {
-                                    self.error(format!(
-                                        "Esperava nome de um método, mas encontrei '{}'.",
-                                        self.peek().lexeme
-                                    ));
-                                    return None;
-                                }
+                        match &self.peek().token_type {
+                            TokenType::Identifier(n) => {
+                                let id = next_id();
+                                let expr_variable =
+                                    Expression::Variable(n.clone(), self.peek().line, id);
+                                self.advance();
+                                let methods = self.parse_class_body()?;
+                                Some(Statement::Class(
+                                    name,
+                                    line,
+                                    Some(expr_variable),
+                                    methods,
+                                ))
+                            }
+                            _ => {
+                                self.error(format!(
+                                    "Esperava nome de uma superclasse, mas encontrei '{}'.",
+                                    self.peek().lexeme
+                                ));
+                                return None;
                             }
                         }
-                        self.advance();
-                        return Some(Statement::Class(name, line, methods));
+                    }
+                    TokenType::LeftBrace => {
+                        let methods = self.parse_class_body()?;
+                        return Some(Statement::Class(name, line, None, methods));
                     }
                     _ => {
                         self.error(format!(

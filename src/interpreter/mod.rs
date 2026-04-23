@@ -277,7 +277,7 @@ impl ExprVisitor for Interpreter {
                 let borrowed = instance.borrow();
                 match borrowed.fields.get(&token.lexeme) {
                     Some(i) => return Ok(i.clone()),
-                    None => match borrowed.class.functions.get(&token.lexeme) {
+                    None => match borrowed.class.find_method(&token.lexeme) {
                         Some(func) => {
                             let env = Environment::new_enclosed(Rc::clone(&func.closure));
                             Environment::define(
@@ -338,6 +338,66 @@ impl ExprVisitor for Interpreter {
         match self.locals.get(&id) {
             Some(d) => Environment::get_at(&self.environment, *d, token.lexeme.clone(), token.line),
             None => Environment::get(&self.globals, &token.lexeme, token.line),
+        }
+    }
+
+    fn visit_super(
+        &mut self,
+        key_super: &crate::token::Token,
+        method: &crate::token::Token,
+        id: usize,
+    ) -> Self::Output {
+        let depth = *self.locals.get(&id).unwrap();
+        let superclass = Environment::get_at(
+            &self.environment,
+            depth,
+            "super".to_string(),
+            key_super.line,
+        )?;
+        let instance = Environment::get_at(
+            &self.environment,
+            depth - 1,
+            "this".to_string(),
+            key_super.line,
+        )?;
+
+        let instance_rc = match instance {
+            SeleneValue::Instance(rc) => rc,
+            _ => {
+                return Err(RuntimeError::Error {
+                    line: key_super.line,
+                    message: "this não é uma instancia válida".to_string(),
+                });
+            }
+        };
+
+        match superclass {
+            SeleneValue::Class(sc) => match sc.find_method(&method.lexeme) {
+                Some(s) => {
+                    let env = Environment::new_enclosed(Rc::clone(&s.closure));
+                    Environment::define(
+                        &env,
+                        "this".to_string(),
+                        SeleneValue::Instance(Rc::clone(&instance_rc)),
+                    );
+                    let new_func = SeleneFunction {
+                        name: s.name.clone(),
+                        params: s.params.clone(),
+                        body: s.body.clone(),
+                        closure: env,
+                        is_initializer: s.is_initializer,
+                    };
+                    return Ok(SeleneValue::Function(Rc::new(new_func)));
+                }
+                None => Err(RuntimeError::Error {
+                    line: key_super.line,
+                    message: format!("Método não encontrado: '{}': ", method.lexeme),
+                }),
+            },
+            _ => Err(RuntimeError::Error {
+                line: key_super.line,
+                message: format!("Superclasse não encontrada: '{}': ", method.lexeme),
+            }),
         }
     }
 }
@@ -444,10 +504,40 @@ impl StmtVisitor for Interpreter {
         &mut self,
         name: &String,
         _line: u64,
+        superclass: &Option<Expression>,
         statements: &Vec<Statement>,
     ) -> Self::Output {
         let mut functions = HashMap::new();
         Environment::define(&self.environment, name.clone(), SeleneValue::Null);
+        let previous = Rc::clone(&self.environment);
+
+        let super_rc: Option<Rc<SeleneClass>> = match superclass {
+            Some(s) => {
+                let val = s.accept(self)?;
+                match val {
+                    SeleneValue::Class(class) => {
+                        let super_env = Environment::new_enclosed(Rc::clone(&self.environment));
+
+                        Environment::define(
+                            &super_env,
+                            "super".to_string(),
+                            SeleneValue::Class(Rc::clone(&class)),
+                        );
+
+                        self.environment = super_env;
+
+                        Some(class)
+                    }
+                    _ => {
+                        return Err(RuntimeError::Error {
+                            line: 0,
+                            message: "Superclasse deve ser uma classe.".to_string(),
+                        });
+                    }
+                }
+            }
+            None => None,
+        };
         for stmt in statements {
             match stmt {
                 Statement::Function(n, params, statements, _line) => {
@@ -464,16 +554,28 @@ impl StmtVisitor for Interpreter {
                 _ => {}
             }
         }
+
         let selene_class = SeleneClass {
             name: name.clone(),
             functions: functions,
+            superclass: super_rc,
         };
 
         Environment::define(
             &self.environment,
             name.clone(),
-            SeleneValue::Class(Rc::new(selene_class)),
+            SeleneValue::Class(Rc::new(selene_class.clone())),
         );
+
+        if superclass.is_some() {
+            self.environment = previous;
+
+            Environment::define(
+                &self.environment,
+                name.clone(),
+                SeleneValue::Class(Rc::new(selene_class.clone())),
+            );
+        }
         Ok(())
     }
 }

@@ -112,6 +112,45 @@ impl Parser {
                 let id = next_id();
                 Ok(Expression::This(token, id))
             }
+            TokenType::Super => {
+                let key_super = self.peek().clone();
+                self.advance();
+                match self.peek().token_type {
+                    TokenType::Dot => {
+                        self.advance();
+                        match &self.peek().token_type {
+                            TokenType::Identifier(_) => {
+                                let method = self.peek().clone();
+                                self.advance();
+                                let id = next_id();
+                                Ok(Expression::Super(key_super, method, id))
+                            }
+                            _ => {
+                                let error = ParseError::new(
+                                    self.peek().clone(),
+                                    format!(
+                                        "Esperava o nome de um método, mas encontrei '{}'.",
+                                        self.peek().lexeme
+                                    ),
+                                );
+                                self.errors.push(error.clone());
+                                Err(error)
+                            }
+                        }
+                    }
+                    _ => {
+                        let error = ParseError::new(
+                            self.peek().clone(),
+                            format!(
+                                "Esperava '.' após uso de super, mas encontrei '{}'.",
+                                self.peek().lexeme
+                            ),
+                        );
+                        self.errors.push(error.clone());
+                        Err(error)
+                    }
+                }
+            }
             _ => {
                 let error = ParseError::new(
                     self.peek().clone(),

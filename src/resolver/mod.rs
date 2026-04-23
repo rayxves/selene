@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     expr::{ExprVisitor, Expression},
     interpreter::Interpreter,
-    stmt::{ Statement, StmtVisitor},
+    stmt::{Statement, StmtVisitor},
     token::Token,
 };
 
@@ -34,6 +34,7 @@ pub enum IsFunction {
 #[derive(Clone, Copy, PartialEq)]
 pub enum IsClass {
     Class,
+    Subclass,
     None,
 }
 
@@ -189,13 +190,29 @@ impl ExprVisitor for Resolver {
     }
 
     fn visit_this(&mut self, token: &Token, id: usize) -> Self::Output {
-        if self.is_class == IsClass::Class {
-            self.resolve_local(id, "this");
-            Ok(())
-        } else {
+        if self.is_class == IsClass::None {
             return Err(ResolveError::new(
                 token.line,
                 "Não é possivel usar this sem uma classe".to_string(),
+            ));
+        }
+        self.resolve_local(id, "this");
+        Ok(())
+    }
+
+    fn visit_super(&mut self, key_super: &Token, _method: &Token, id: usize) -> Self::Output {
+        if self.is_class == IsClass::Subclass {
+            self.resolve_local(id, "super");
+            Ok(())
+        } else if self.is_class == IsClass::None {
+            return Err(ResolveError::new(
+                key_super.line,
+                "Não é possivel usar super fora de uma classe.".to_string(),
+            ));
+        } else {
+            return Err(ResolveError::new(
+                key_super.line,
+                "Não é possivel usar super sem uma superclasse.".to_string(),
             ));
         }
     }
@@ -281,7 +298,7 @@ impl StmtVisitor for Resolver {
                 line,
                 "Return só pode ser usado em funções".to_string(),
             ));
-        } else if matches!(self.is_function, IsFunction::Initializer) && value.is_some(){
+        } else if matches!(self.is_function, IsFunction::Initializer) && value.is_some() {
             return Err(ResolveError::new(
                 line,
                 "Não é possível retornar um valor de init".to_string(),
@@ -297,13 +314,36 @@ impl StmtVisitor for Resolver {
         &mut self,
         name: &String,
         line: u64,
+        superclass: &Option<Expression>,
         statements: &Vec<Statement>,
     ) -> Self::Output {
         let current_is_class = self.is_class;
-        self.is_class = IsClass::Class;
         self.declare(name.clone(), line)?;
         self.define(name.clone());
+        match superclass {
+            Some(s) => {
+                if let Expression::Variable(super_name, _, _) = s {
+                    if super_name == name {
+                        return Err(ResolveError::new(
+                            line,
+                            format!("A classe '{}' não pode herdar de si mesma.", name),
+                        ));
+                    }
+                }
+                self.is_class = IsClass::Subclass;
+                s.accept(self)?;
+                self.begin_scope();
+                if let Some(scope) = self.scopes.last_mut() {
+                    scope.insert("super".to_string(), true);
+                }
+            }
+            None => {
+                self.is_class = IsClass::Class;
+            }
+        };
+
         self.begin_scope();
+
         if let Some(scope) = self.scopes.last_mut() {
             scope.insert("this".to_string(), true);
         }
@@ -331,6 +371,9 @@ impl StmtVisitor for Resolver {
         }
 
         self.end_scope();
+        if superclass.is_some() {
+            self.end_scope();
+        }
         self.is_class = current_is_class;
         Ok(())
     }
