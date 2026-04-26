@@ -90,7 +90,7 @@ impl Parser {
                         let error = ParseError::new(
                             self.peek().clone(),
                             format!(
-                                "Esperava ')' após expressão, mas encontrei '{}'.",
+                                "Esperava ')' para fechar o parêntese, mas encontrei '{}'.",
                                 self.peek().lexeme
                             ),
                         );
@@ -129,7 +129,7 @@ impl Parser {
                                 let error = ParseError::new(
                                     self.peek().clone(),
                                     format!(
-                                        "Esperava o nome de um método, mas encontrei '{}'.",
+                                        "Esperava o nome de um método após 'super.', mas encontrei '{}'.",
                                         self.peek().lexeme
                                     ),
                                 );
@@ -142,7 +142,7 @@ impl Parser {
                         let error = ParseError::new(
                             self.peek().clone(),
                             format!(
-                                "Esperava '.' após uso de super, mas encontrei '{}'.",
+                                "'super' deve ser seguido de '.' e um nome de método, mas encontrei '{}'.",
                                 self.peek().lexeme
                             ),
                         );
@@ -184,7 +184,7 @@ impl Parser {
                 }
                 if !self.check(&TokenType::RightParen) {
                     return Err(self.error(format!(
-                        "Esperava ')' após argumentos, mas encontrei '{}'.",
+                        "Esperava ')' após os argumentos, mas encontrei '{}'.",
                         self.peek().lexeme
                     )));
                 }
@@ -200,7 +200,7 @@ impl Parser {
                     }
                     _ => {
                         return Err(self.error(format!(
-                            "Esperava nome de propriedade após '.', mas encontrei '{}'.",
+                            "Esperava um nome de propriedade após '.', mas encontrei '{}'.",
                             self.peek().lexeme
                         )));
                     }
@@ -211,6 +211,7 @@ impl Parser {
         }
         Ok(callee)
     }
+
     pub fn unary(&mut self) -> Result<Expression, ParseError> {
         let line = self.peek().line;
         match &self.peek().token_type {
@@ -337,7 +338,7 @@ impl Parser {
                 _ => {
                     let error = ParseError::new(
                         self.peek().clone(),
-                        "Alvo de atribuição inválido.".to_string(),
+                        "Não é possível atribuir a esta expressão. Só variáveis e propriedades podem receber valores.".to_string(),
                     );
                     self.errors.push(error.clone());
                     return Err(error);

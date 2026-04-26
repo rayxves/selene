@@ -52,16 +52,15 @@ impl ExprVisitor for Interpreter {
                     }
                     (SeleneValue::Number(_), _) => Err(RuntimeError::Error {
                         line: *line,
-                        message: "Operando direito do '+' deve ser um número.".to_string(),
+                        message: "O operador '+' entre números exige que ambos os lados sejam números.".to_string(),
                     }),
                     (SeleneValue::String(_), _) => Err(RuntimeError::Error {
                         line: *line,
-                        message: "Operando direito do '+' deve ser uma string.".to_string(),
+                        message: "O operador '+' entre strings exige que ambos os lados sejam strings. Use to_string() para converter outros tipos.".to_string(),
                     }),
                     _ => Err(RuntimeError::Error {
                         line: *line,
-                        message: "Operandos do '+' devem ser dois números ou duas strings."
-                            .to_string(),
+                        message: "O operador '+' só funciona entre dois números ou duas strings.".to_string(),
                     }),
                 }
             }
@@ -129,7 +128,7 @@ impl ExprVisitor for Interpreter {
                     SeleneValue::Number(n) => Ok(SeleneValue::Number(-n)),
                     _ => Err(RuntimeError::Error {
                         line: *line,
-                        message: "Operando deve ser um número.".to_string(),
+                        message: "O operador '-' (negação) só funciona com números.".to_string(),
                     }),
                 }
             }
@@ -224,7 +223,7 @@ impl ExprVisitor for Interpreter {
 
                 let instance_rc = Rc::new(RefCell::new(selene_instance));
                 let instance_value = SeleneValue::Instance(Rc::clone(&instance_rc));
-                let init_func = class.functions.get("init").cloned();
+                let init_func = class.find_method("init").clone();
 
                 match init_func {
                     Some(fun) => {
@@ -263,7 +262,7 @@ impl ExprVisitor for Interpreter {
             _ => Err(RuntimeError::Error {
                 line: paren.line,
                 message: format!(
-                    "Expressão '{}' não é uma função e não pode ser chamada.",
+                    "'{}' não é uma função. Só funções e classes podem ser chamadas com '()'.",
                     paren.lexeme
                 ),
             }),
@@ -297,7 +296,7 @@ impl ExprVisitor for Interpreter {
                         None => Err(RuntimeError::Error {
                             line: token.line,
                             message: format!(
-                                "Expressão '{}' não é uma função e não pode ser chamada.",
+                                "A propriedade '{}' não existe nesta instância nem em sua classe.",
                                 token.lexeme
                             ),
                         }),
@@ -306,7 +305,10 @@ impl ExprVisitor for Interpreter {
             }
             _ => Err(RuntimeError::Error {
                 line: token.line,
-                message: format!("Expressão '{}' não é uma instancia válida: ", token.lexeme),
+                message: format!(
+                    "Só instâncias de classes têm propriedades. '{}' não é uma instância.",
+                    token.lexeme
+                ),
             }),
         }
     }
@@ -329,7 +331,10 @@ impl ExprVisitor for Interpreter {
             }
             _ => Err(RuntimeError::Error {
                 line: token.line,
-                message: format!("Expressão '{}' não é uma instancia válida: ", token.lexeme),
+                message: format!(
+                    "Só instâncias de classes têm propriedades. '{}' não é uma instância.",
+                    token.lexeme
+                ),
             }),
         }
     }
@@ -347,7 +352,15 @@ impl ExprVisitor for Interpreter {
         method: &crate::token::Token,
         id: usize,
     ) -> Self::Output {
-        let depth = *self.locals.get(&id).unwrap();
+        let depth = match self.locals.get(&id) {
+            Some(d) => *d,
+            None => {
+                return Err(RuntimeError::Error {
+                    line: key_super.line,
+                    message: "Erro interno: super não resolvido.".to_string(),
+                });
+            }
+        };
         let superclass = Environment::get_at(
             &self.environment,
             depth,
@@ -366,7 +379,7 @@ impl ExprVisitor for Interpreter {
             _ => {
                 return Err(RuntimeError::Error {
                     line: key_super.line,
-                    message: "this não é uma instancia válida".to_string(),
+                    message: "Erro interno: 'this' não é uma instância válida.".to_string(),
                 });
             }
         };
@@ -391,12 +404,12 @@ impl ExprVisitor for Interpreter {
                 }
                 None => Err(RuntimeError::Error {
                     line: key_super.line,
-                    message: format!("Método não encontrado: '{}': ", method.lexeme),
+                    message: format!("O método '{}' não existe na superclasse.", method.lexeme),
                 }),
             },
             _ => Err(RuntimeError::Error {
                 line: key_super.line,
-                message: format!("Superclasse não encontrada: '{}': ", method.lexeme),
+                message: "Erro interno: superclasse não é uma classe válida.".to_string(),
             }),
         }
     }
@@ -517,27 +530,27 @@ impl StmtVisitor for Interpreter {
                 match val {
                     SeleneValue::Class(class) => {
                         let super_env = Environment::new_enclosed(Rc::clone(&self.environment));
-
                         Environment::define(
                             &super_env,
                             "super".to_string(),
                             SeleneValue::Class(Rc::clone(&class)),
                         );
-
                         self.environment = super_env;
-
                         Some(class)
                     }
                     _ => {
                         return Err(RuntimeError::Error {
                             line: 0,
-                            message: "Superclasse deve ser uma classe.".to_string(),
+                            message:
+                                "O valor após '<' deve ser uma classe, não outro tipo de valor."
+                                    .to_string(),
                         });
                     }
                 }
             }
             None => None,
         };
+
         for stmt in statements {
             match stmt {
                 Statement::Function(n, params, statements, _line) => {
@@ -547,7 +560,7 @@ impl StmtVisitor for Interpreter {
                         params: params.clone(),
                         body: statements.clone(),
                         closure: Rc::clone(&self.environment),
-                        is_initializer: is_initializer,
+                        is_initializer,
                     };
                     functions.insert(n.clone(), selene_function);
                 }
@@ -557,23 +570,22 @@ impl StmtVisitor for Interpreter {
 
         let selene_class = SeleneClass {
             name: name.clone(),
-            functions: functions,
+            functions,
             superclass: super_rc,
         };
 
+        let class_rc = Rc::new(selene_class);
         Environment::define(
             &self.environment,
             name.clone(),
-            SeleneValue::Class(Rc::new(selene_class.clone())),
+            SeleneValue::Class(Rc::clone(&class_rc)),
         );
-
         if superclass.is_some() {
             self.environment = previous;
-
             Environment::define(
                 &self.environment,
                 name.clone(),
-                SeleneValue::Class(Rc::new(selene_class.clone())),
+                SeleneValue::Class(Rc::clone(&class_rc)),
             );
         }
         Ok(())
@@ -588,7 +600,6 @@ impl Interpreter {
             "clock".to_string(),
             SeleneValue::Function(Rc::new(ClockFn)),
         );
-
         Environment::define(
             &globals,
             "to_string".to_string(),
@@ -627,7 +638,7 @@ impl Interpreter {
             (SeleneValue::Number(a), SeleneValue::Number(b)) => Ok((a, b)),
             _ => Err(RuntimeError::Error {
                 line,
-                message: format!("Operandos do '{}' devem ser números.", operator),
+                message: format!("O operador '{}' só funciona com números.", operator),
             }),
         }
     }

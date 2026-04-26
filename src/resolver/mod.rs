@@ -61,7 +61,10 @@ impl Resolver {
             if scope.contains_key(&name) {
                 return Err(ResolveError::new(
                     line,
-                    "Já existe uma variável com esse nome neste escopo".to_string(),
+                    format!(
+                        "Variável '{}' já foi declarada neste escopo. Use um nome diferente.",
+                        name
+                    ),
                 ));
             }
             scope.insert(name, false);
@@ -134,7 +137,7 @@ impl ExprVisitor for Resolver {
         if !self.scopes.is_empty() && self.scopes.last().unwrap().get(name) == Some(&false) {
             return Err(ResolveError::new(
                 line,
-                "Não é possivel usar uma variavel que não foi declarada".to_string(),
+                format!("Variável '{}' usada antes de ser inicializada.", name),
             ));
         }
         self.resolve_local(id, name);
@@ -193,7 +196,7 @@ impl ExprVisitor for Resolver {
         if self.is_class == IsClass::None {
             return Err(ResolveError::new(
                 token.line,
-                "Não é possivel usar this sem uma classe".to_string(),
+                "'this' só pode ser usado dentro de métodos de uma classe.".to_string(),
             ));
         }
         self.resolve_local(id, "this");
@@ -201,22 +204,22 @@ impl ExprVisitor for Resolver {
     }
 
     fn visit_super(&mut self, key_super: &Token, _method: &Token, id: usize) -> Self::Output {
-        if self.is_class == IsClass::Subclass {
-            self.resolve_local(id, "super");
-            Ok(())
-        } else if self.is_class == IsClass::None {
+        if self.is_class == IsClass::None {
             return Err(ResolveError::new(
                 key_super.line,
-                "Não é possivel usar super fora de uma classe.".to_string(),
+                "'super' só pode ser usado dentro de métodos de uma classe.".to_string(),
             ));
-        } else {
+        } else if self.is_class == IsClass::Class {
             return Err(ResolveError::new(
                 key_super.line,
-                "Não é possivel usar super sem uma superclasse.".to_string(),
+                "'super' só pode ser usado em classes que herdam de outra classe.".to_string(),
             ));
         }
+        self.resolve_local(id, "super");
+        Ok(())
     }
 }
+
 impl StmtVisitor for Resolver {
     type Output = Result<(), ResolveError>;
 
@@ -296,12 +299,12 @@ impl StmtVisitor for Resolver {
         if matches!(self.is_function, IsFunction::None) {
             return Err(ResolveError::new(
                 line,
-                "Return só pode ser usado em funções".to_string(),
+                "'return' só pode ser usado dentro de uma função.".to_string(),
             ));
         } else if matches!(self.is_function, IsFunction::Initializer) && value.is_some() {
             return Err(ResolveError::new(
                 line,
-                "Não é possível retornar um valor de init".to_string(),
+                "O método 'init' não pode retornar um valor. Use 'return;' sem valor para sair cedo.".to_string(),
             ));
         }
         if let Some(v) = value {
@@ -322,10 +325,10 @@ impl StmtVisitor for Resolver {
         self.define(name.clone());
         match superclass {
             Some(s) => {
-                if let Expression::Variable(super_name, _, _) = s {
+                if let Expression::Variable(super_name, line, _) = s {
                     if super_name == name {
                         return Err(ResolveError::new(
-                            line,
+                            *line,
                             format!("A classe '{}' não pode herdar de si mesma.", name),
                         ));
                     }
